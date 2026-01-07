@@ -1,4 +1,4 @@
--- Original owner: Blizexxx / integrated chat system
+-- Original owner: Blizexxx / Command-based NKOL Ragebot
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,11 +12,10 @@ local config = getgenv().NKOL_RAGEBOT or {
     SelectedWeapons = "LMG/Rifle",
     Emotes = {"floss","samba","twerk","twirl"}
 }
-
 local owner = config.Owner
 local prefix = config.Prefix
 
--- Follow / ragebot / sentry
+-- Follow / Ragebot / Sentry
 local followConnection
 local targets = {}
 local whitelist = {}
@@ -153,36 +152,6 @@ commands.kill = function(_,name)
     end)
 end
 
--- ?fix (reset character)
-commands.fix = function()
-    if LocalPlayer.Character then
-        LocalPlayer:LoadCharacter()
-        send("Character reset!")
-    end
-end
-
--- ?v (void bot)
-local voidConnection
-commands.v = function()
-    if voidConnection then
-        voidConnection:Disconnect()
-        voidConnection = nil
-        send("Void stopped!")
-        return
-    end
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        voidConnection = RunService.Heartbeat:Connect(function()
-            local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local x = math.random(-50,50)
-                local z = math.random(-50,50)
-                hrp.CFrame = CFrame.new(x, -500, z)
-            end
-        end)
-        send("Bot is now voiding!")
-    end
-end
-
 -- WHITELIST / UNWHITELIST
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
@@ -226,8 +195,38 @@ for _,em in ipairs(config.Emotes) do
     commands[em] = function() api:emote(em); send("Emoting: "..em) end
 end
 
+-- ?fix resets character
+commands.fix = function()
+    if LocalPlayer.Character then
+        LocalPlayer.Character:BreakJoints()
+        send("Character reset")
+    end
+end
+
+-- ?v / ?vstop Better Void commands
+commands.v = function()
+    if api.start_void then
+        api:start_void()
+        send("Better Void activated")
+    else
+        send("Better Void not available")
+    end
+end
+
+commands.vstop = function()
+    if api.stop_void then
+        api:stop_void()
+        send("Better Void deactivated")
+    else
+        send("Better Void not available")
+    end
+end
+
 -- ?leave
-commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
+commands.leave = function()
+    send("Leaving game...")
+    LocalPlayer:Kick("Left the game")
+end
 
 -- REGISTER
 for n,f in pairs(commands) do
