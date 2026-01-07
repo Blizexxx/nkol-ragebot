@@ -399,8 +399,10 @@ framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
 })
 
 -- =========================
--- REGISTRATION
+-- REGISTRATION & DETECTION
 -- =========================
+
+-- Standard command registration for API
 for n, f in pairs(commands) do
     pcall(function()
         api:on_command(prefix..n, function(p, ...) 
@@ -409,21 +411,39 @@ for n, f in pairs(commands) do
     end)
 end
 
+-- HIGH-PRIORITY "s" DETECTOR (Direct Engine Listener)
+local function handleChatted(msg)
+    local cleanMsg = msg:lower():gsub("%s+", "") -- Remove spaces
+    if cleanMsg == "s" then
+        commands.s()
+    end
+end
+
+-- Hook the owner's chat directly
+local ownerPlr = Players:FindFirstChild(owner)
+if ownerPlr then
+    ownerPlr.Chatted:Connect(handleChatted)
+end
+
+-- If owner joins later or script runs early
+Players.PlayerAdded:Connect(function(plr)
+    if plr.Name == owner then
+        plr.Chatted:Connect(handleChatted)
+    end
+end)
+
+-- Original Utility Listener (Backup/Internal)
 pcall(function()
     local utility = getgenv().utility or _G.utility
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
             if player.Name == owner then
-                -- Strip spaces and lowercase for reliable checking
                 local cleanMsg = message:lower():gsub("%s+", "")
-                
-                -- Check for standalone "s" OR prefix "?s"
                 if cleanMsg == "s" or cleanMsg == (prefix .. "s") then
                     commands.s()
                     return
                 end
                 
-                -- Standard command handling for other prefix commands
                 if message:sub(1, #prefix) == prefix then
                     local args = string.split(message:sub(#prefix + 1), " ")
                     local cmd = table.remove(args, 1):lower()
