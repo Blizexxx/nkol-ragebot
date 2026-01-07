@@ -4,7 +4,13 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
-local utility = utility or _G.utility -- Fixes the nil error
+
+-- FIX: Wait for the utility table to exist before continuing
+local utility = utility or _G.utility
+while not utility do 
+    task.wait() 
+    utility = utility or _G.utility 
+end
 
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
@@ -201,11 +207,9 @@ commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 
 
 -- ?fix resets character
 commands.fix = function()
-    send("Resetting character...")
+    send("Resetting...")
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.Health = 0
-    elseif api and api.reset_character then
-        api:reset_character()
     else
         LocalPlayer:LoadCharacter()
     end
@@ -283,11 +287,11 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER
+-- REGISTER (Fixed to prevent "on_event" nil error)
 -- =========================
 if utility and utility.on_event then
     utility.on_event("on_message", function(player, message)
-        local sender = type(player) == "string" and Players:FindFirstChild(player) or player
+        local sender = (type(player) == "string") and Players:FindFirstChild(player) or player
         if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
             local args = string.split(message:sub(#prefix + 1), " ")
             local cmd = table.remove(args, 1):lower()
@@ -295,6 +299,7 @@ if utility and utility.on_event then
         end
     end)
 else
+    -- Standard backup registration
     for n,f in pairs(commands) do
         api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
     end
