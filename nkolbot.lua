@@ -1,107 +1,43 @@
+-- Original owner: Blizexxx / integrated chat system
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local function safe_call(func, name)
-    local success, err = pcall(func)
-    if not success then
-        print(string.format("[VEXIS ERROR] in %s: %s", name or "Unknown", tostring(err)))
-    end
-    return success, err
-end
-
+local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
-if not MainEvent then print("[VEXIS ERROR] MainEvent not found in ReplicatedStorage!") end
 
-safe_call(function() api:set_lua_name("Vexis") end, "api:set_lua_name")
+-- CONFIG
+local config = getgenv().NKOL_RAGEBOT or {
+    Owner = LocalPlayer.Name,
+    Prefix = "?",
+    SelectedWeapons = "LMG/Rifle",
+    Emotes = {"floss","samba","twerk","twirl"}
+}
 
-local ragebot_tab, protector_group, utility_group
-safe_call(function()
-    ragebot_tab = api:GetTab("ragebot") or api:AddTab("ragebot")
-    protector_group = ragebot_tab:AddLeftGroupbox("Vexis Protector")
-    utility_group = ragebot_tab:AddRightGroupbox("Vexis Utility")
-end, "UI Setup Tabs/Groups")
+local owner = config.Owner
+local prefix = config.Prefix
 
-safe_call(function()
-    protector_group:AddToggle("protector_active", { Text = "Enable Protector", Default = false })
-    protector_group:AddToggle("protector_stomp", { Text = "Stomp Target (Doesnt Work w FP)", Default = false })
-    protector_group:AddDropdown("protector_targets", { Text = "Select Players to Protect", Values = {}, Multi = true, Default = {} })
-    protector_group:AddDropdown("protector_strafe_style", { Text = "Strafe Style", Values = {"Circle", "Orbit", "V-Spiral", "Madness", "Figure-8", "Square", "Jitter-Void", "Hyper-Orbit", "Spiral-Out", "Zig-Zag", "Tele-Jitter"}, Default = "Madness", Multi = false })
-    protector_group:AddSlider("protector_strafe_dist", { Text = "Strafe Distance", Default = 8, Min = 0, Max = 50, Rounding = 1, Compact = false })
-    protector_group:AddSlider("protector_strafe_speed", { Text = "Strafe Speed", Default = 12, Min = 1, Max = 50, Rounding = 1, Compact = false })
-    protector_group:AddToggle("protector_use_flame", { Text = "Use Flame while Killing", Default = false })
-    protector_group:AddButton("Clear All Protected", function()
-        local targets_obj = api:get_ui_object("protector_targets")
-        if targets_obj then targets_obj:SetValue({}) end
-    end)
-    protector_group:AddButton("Force Stop Ragebot", function()
-        api:set_ragebot(false)
-        local rb_enabled = api:get_ui_object("ragebot_enabled")
-        if rb_enabled then 
-            rb_enabled:SetValue(false) 
-        end
-        local rb_targets = api:get_ui_object("ragebot_targets")
-        if rb_targets then
-            rb_targets:SetValue({})
-            rb_targets:SetValue("")
-        end
-        api:notify("[VEXIS] Ragebot Force Stopped", 4)
-    end)
+-- Follow / ragebot / sentry
+local followConnection
+local targets = {}
+local whitelist = {}
+local sentry_active = false
 
-    utility_group:AddDropdown("utility_bring_player", { Text = "Select Player to Bring", Values = {}, Multi = false, Default = nil, AllowNull = true })
-    utility_group:AddToggle("utility_drop_on_bring", { Text = "Drop after Bring", Default = false })
-    utility_group:AddButton("Bring Player", function()
-        local dropdown = api:get_ui_object("utility_bring_player")
-        if dropdown and dropdown.Value then
-            startBring(dropdown.Value)
-        else
-            api:notify("[VEXIS] No player selected to bring!", 3)
+-- CHAT SYSTEM
+local function send(msg)
+    pcall(function()
+        if api and api.chat then
+            api:chat(msg)
+        elseif api and api.Chat then
+            api:Chat(msg)
         end
     end)
-    utility_group:AddButton("Force Stop Bring", function()
-        if bringing_target then
-            api:notify("[VEXIS] Bringing operation cancelled.", 4)
-            stopBringProcess()
-        end
-    end)
-end, "UI Setup Objects")
+end
 
 local function getFormattedName(player)
     return string.format("%s (@%s)", player.DisplayName, player.Name)
 end
 
-local function updatePlayerList()
-    safe_call(function()
-        local dropdown_items = {}
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local formatted = getFormattedName(player)
-                table.insert(dropdown_items, formatted)
-            end
-        end
-        
-        local dropdown_p = api:get_ui_object("protector_targets")
-        if dropdown_p then dropdown_p:SetValues(dropdown_items) end
-        
-        local dropdown_b = api:get_ui_object("utility_bring_player")
-        if dropdown_b then dropdown_b:SetValues(dropdown_items) end
-    end, "updatePlayerList")
-end
-
-safe_call(function()
-    updatePlayerList()
-    api:add_connection(Players.PlayerAdded:Connect(updatePlayerList))
-    api:add_connection(Players.PlayerRemoving:Connect(updatePlayerList))
-end, "Player List Connections")
-
--- =====================
--- COMMAND SYSTEM SETUP
--- =====================
-local commands = {}
-
--- Get player helper
+-- PLAYER FINDER
 local function getplayer(txt)
     if not txt then return end
     txt = txt:lower()
@@ -112,7 +48,7 @@ local function getplayer(txt)
     end
 end
 
--- Ragebot save/restore
+-- RAGEBOT SAVE / RESTORE
 local function saveRB()
     return {
         targets = api:get_ui_object("ragebot_targets").Value or {},
@@ -131,9 +67,67 @@ local function restoreRB(s)
     if rb_flame then rb_flame:SetValue(s.flame) end
 end
 
--- =====================
--- ?b Bring Command (updated)
--- =====================
+-- =========================
+-- COMMANDS
+-- =========================
+local commands = {}
+
+-- ?a Auto ragebot
+commands.a = function(_, ...)
+    for _,n in pairs({...}) do
+        local plr = getplayer(n)
+        if plr then
+            targets[plr.Name] = true
+            send("Autoing "..plr.DisplayName)
+        end
+    end
+    api:get_ui_object("ragebot_targets"):SetValue(targets)
+    api:set_ragebot(true)
+end
+
+-- ?reset
+commands.reset = function()
+    targets = {}
+    api:get_ui_object("ragebot_targets"):SetValue({})
+    api:set_ragebot(false)
+    send("Ragebot cleared")
+end
+
+-- ?fp fake position
+commands.fp = function(_,arg)
+    api:set_fake(arg ~= "off")
+    send("Fake position "..(arg ~= "off" and "enabled" or "disabled"))
+end
+
+-- ?f follow owner
+commands.f = function(_,arg)
+    if arg == "off" then
+        if followConnection then followConnection:Disconnect() end
+        send("Follow disabled")
+        return
+    end
+    local ownerPlr = getplayer(owner)
+    if not ownerPlr or not ownerPlr.Character then return end
+    followConnection = RunService.Heartbeat:Connect(function()
+        local hrp = ownerPlr.Character:FindFirstChild("HumanoidRootPart")
+        local me = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and me then me.CFrame = hrp.CFrame * CFrame.new(0,0,-5) end
+    end)
+    send("Following "..ownerPlr.DisplayName)
+end
+
+-- ?tp
+commands.tp = function(_,name)
+    local t = getplayer(name)
+    if t and t.Character then
+        api:teleport(t.Character.HumanoidRootPart.CFrame)
+        send("Teleported to "..t.DisplayName)
+    end
+end
+
+-- =========================
+-- ?b Bring (UPDATED METHOD)
+-- =========================
 commands.b = function(_, name)
     local target = getplayer(name)
     if not target then
@@ -181,14 +175,146 @@ commands.b = function(_, name)
     end)
 end
 
--- =====================
--- Register Commands
--- =====================
-local owner = LocalPlayer.Name
-local prefix = "?"
+-- ?kill
+commands.kill = function(_,name)
+    local t = getplayer(name)
+    if not t or not MainEvent then return end
+    local saved = saveRB()
+    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
+    api:set_ragebot(true)
+    send("Killing "..t.DisplayName)
+    task.spawn(function()
+        repeat task.wait(.15) until api:get_status_cache(t)["K.O"]
+        api:set_ragebot(false)
+        api:teleport(t.Character.HumanoidRootPart.CFrame * CFrame.new(0,4.5,0))
+        for i=1,6 do MainEvent:FireServer("Stomp") task.wait(.05) end
+        restoreRB(saved)
+        send("Killed "..t.DisplayName)
+    end)
+end
 
+-- WHITELIST / UNWHITELIST
+commands.whitelist = function(_, name)
+    local plr = getplayer(name)
+    if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
+end
+commands.unwhitelist = function(_, name)
+    local plr = getplayer(name)
+    if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
+end
+
+-- SENTRY
+commands.sentry = function(_, arg)
+    if not arg then send("Usage: ?sentry on | off") return end
+    arg = arg:lower()
+    local ownerPlr = getplayer(owner)
+    if not ownerPlr then return end
+    local targets_obj = api:get_ui_object("protector_targets")
+    local protector_toggle = api:get_ui_object("protector_active")
+    if arg == "on" then
+        if sentry_active then send("Sentry already active") return end
+        sentry_active=true; send("Sentry enabled: Protecting "..ownerPlr.DisplayName)
+        if protector_toggle then protector_toggle:SetValue(true) end
+        local sentry_targets = {}; sentry_targets[getFormattedName(ownerPlr)]=true
+        for name,_ in pairs(whitelist) do local p=Players:FindFirstChild(name); if p then sentry_targets[getFormattedName(p)]=true end end
+        if targets_obj then targets_obj:SetValue(sentry_targets) end
+    elseif arg == "off" then
+        if not sentry_active then send("Sentry already inactive") return end
+        sentry_active=false; send("Sentry disabled")
+        if protector_toggle then protector_toggle:SetValue(false) end
+        if targets_obj then targets_obj:SetValue({}) end
+        restoreRB(saveRB())
+    else send("Usage: ?sentry on | off") end
+end
+
+-- ?ka / ?karange
+commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
+commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
+
+-- ?fix resets character
+commands.fix = function()
+    if api and api.reset_character then
+        api:reset_character()
+    else
+        LocalPlayer:LoadCharacter()
+    end
+    send("Character reset!")
+end
+
+-- ?v void bot
+commands.v = function()
+    if api and api.toggle_void then
+        api.toggle_void()
+        send("Better Void toggled!")
+    else
+        send("Void API not found.")
+    end
+end
+
+-- ?flame <player>
+commands.flame = function(_, targetName)
+    if not targetName then 
+        send("Usage: ?flame <player>")
+        return
+    end
+    local plr = getplayer(targetName)
+    if not plr then
+        send("Player not found: "..targetName)
+        return
+    end
+
+    local saved = saveRB()
+    local rb_targets = api:get_ui_object("ragebot_targets")
+    if rb_targets then rb_targets:SetValue({[plr.Name] = true}) end
+
+    local rb_flame = api:get_ui_object("ragebot_flame")
+    if rb_flame then rb_flame:SetValue(true) end
+
+    api:set_ragebot(true)
+    send("Flame activated on "..plr.DisplayName)
+
+    task.spawn(function()
+        while plr.Parent and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") do
+            task.wait(0.5)
+        end
+        restoreRB(saved)
+        send("Flame finished for "..plr.DisplayName)
+    end)
+end
+
+-- EMOTES
+for _,em in ipairs(config.Emotes) do
+    commands[em] = function() api:emote(em); send("Emoting: "..em) end
+end
+
+-- ?leave
+commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
+
+-- =========================
+-- GUI: Commands Tab
+-- =========================
+local commandsTab = api:GetTab("commands") or api:AddTab("commands")
+local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
+cmdBox:AddLabel("?a → Auto ragebot")
+cmdBox:AddLabel("?kill → Kill target")
+cmdBox:AddLabel("?b → Bring target")
+cmdBox:AddLabel("?reset → Clear ragebot")
+cmdBox:AddLabel("?fp / ?fp off → Fake position")
+cmdBox:AddLabel("?f / ?f off → Follow owner")
+cmdBox:AddLabel("?tp → Teleport")
+cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
+cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
+cmdBox:AddLabel("?ka → Enable KillAura")
+cmdBox:AddLabel("?karange <number> → Set KillAura range")
+cmdBox:AddLabel("?fix → Reset character")
+cmdBox:AddLabel("?v → Void bot")
+cmdBox:AddLabel("?flame <player> → Flame target")
+cmdBox:AddLabel("?leave → Leave game")
+for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
+
+-- =========================
+-- REGISTER
+-- =========================
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
-
-api:notify("Vexis Addon Loaded with updated bring feature!", 3)
