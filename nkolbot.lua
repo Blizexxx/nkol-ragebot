@@ -5,8 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
--- FIX 1: Safety check for utility to prevent the 'on_event' nil error
-local utility = utility or _G.utility or {}
+-- FIX: Global safety check to prevent the 'on_event' nil error
+local utility = utility or _G.utility
 
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
@@ -19,30 +19,32 @@ local config = getgenv().NKOL_RAGEBOT or {
 local owner = config.Owner
 local prefix = config.Prefix
 
+-- Follow / ragebot / sentry variables
+local followConnection
+local targets = {}
+local whitelist = {}
+local sentry_active = false
+
 -- CHAT SYSTEM
 local function send(msg)
     pcall(function()
-        if api and api.chat then api:chat(msg)
-        elseif api and api.Chat then api:Chat(msg) end
+        if api and api.chat then
+            api:chat(msg)
+        elseif api and api.Chat then
+            api:Chat(msg)
+        end
     end)
 end
 
--- HELPER: Search for a UI object by name across all tabs
-local function findUIObject(name)
-    local found = nil
-    pcall(function()
-        found = api:get_ui_object(name)
-        if not found then
-            -- Deep search if standard lookup fails
-            for _, tab in pairs(api:get_tabs()) do
-                if tab.get_ui_object then
-                    found = tab:get_ui_object(name)
-                    if found then break end
-                end
-            end
+-- PLAYER FINDER
+local function getplayer(txt)
+    if not txt then return end
+    txt = txt:lower()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():sub(1,#txt)==txt or p.DisplayName:lower():sub(1,#txt)==txt then
+            return p
         end
-    end)
-    return found
+    end
 end
 
 -- =========================
@@ -50,84 +52,138 @@ end
 -- =========================
 local commands = {}
 
--- ?v toggle (Updated to fix "Not Found" error)
+-- ?v - UPDATED FOR CHARACTER TAB VOID TOGGLE
 commands.v = function()
-    -- Look for common internal names for that 'enabled' checkbox in the void tab
-    local voidToggle = findUIObject("void_enabled") or findUIObject("enabled_void") or findUIObject("void_active")
+    -- According to your screenshot, Void is in the 'character' tab
+    local charTab = api:get_tab("character")
+    local voidEnabled = nil
+
+    if charTab then
+        -- Attempt to find the 'enabled' toggle specifically within the character tab context
+        voidEnabled = charTab:get_ui_object("void_enabled") or charTab:get_ui_object("enabled")
+    end
+
+    -- Fallback if tab-specific lookup fails
+    if not voidEnabled then
+        voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active")
+    end
     
-    if voidToggle then
-        local newState = not voidToggle.Value
-        voidToggle:SetValue(newState)
-        send("Void toggle: " .. (newState and "ENABLED" or "DISABLED"))
+    if voidEnabled then
+        local newState = not voidEnabled.Value
+        voidEnabled:SetValue(newState)
+        send("Void bot: " .. (newState and "ENABLED" or "DISABLED"))
     else
-        -- If we still can't find it by name, we try the API function directly
-        if api and api.toggle_void then
-            api:toggle_void()
-            send("Void toggled via API.")
-        else
-            send("Error: Script cannot find the Void toggle path. Please check the tab name.")
-        end
+        send("Error: Could not find Void toggle in Character tab.")
     end
 end
 
--- ?fix resets character
+-- ?fix - Resets character
 commands.fix = function()
+    send("Resetting character...")
     if api and api.reset_character then
         api:reset_character()
     elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.Health = 0
     end
-    send("Character reset!")
 end
 
--- ?a Auto ragebot
+-- ?a - Auto ragebot
 commands.a = function(_, ...)
-    local targets = {}
     for _,n in pairs({...}) do
-        local plr = nil
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p.Name:lower():sub(1,#n)==n:lower() or p.DisplayName:lower():sub(1,#n)==n:lower() then
-                plr = p; break
-            end
+        local plr = getplayer(n)
+        if plr then
+            targets[plr.Name] = true
+            send("Autoing "..plr.DisplayName)
         end
-        if plr then targets[plr.Name] = true end
     end
-    local obj = findUIObject("ragebot_targets")
-    if obj then obj:SetValue(targets) end
+    local rb_obj = api:get_ui_object("ragebot_targets")
+    if rb_obj then rb_obj:SetValue(targets) end
     api:set_ragebot(true)
-    send("Ragebot targets updated.")
 end
 
--- ... [Other commands like ?tp, ?kill remain the same]
+-- ?reset - Clear ragebot
+commands.reset = function()
+    targets = {}
+    local rb_obj = api:get_ui_object("ragebot_targets")
+    if rb_obj then rb_obj:SetValue({}) end
+    api:set_ragebot(false)
+    send("Ragebot cleared")
+end
 
--- =========================
--- REGISTER (The Final Fix)
--- =========================
-local function startBot()
-    -- We wrap this in a loop that checks every second until the utility is ready
-    task.spawn(function()
-        local registered = false
-        while not registered do
-            local currentUtil = utility or _G.utility
-            if currentUtil and currentUtil.on_event then
-                currentUtil.on_event("on_message", function(player, message)
-                    local sender = type(player) == "string" and Players:FindFirstChild(player) or player
-                    if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
-                        local args = string.split(message:sub(#prefix + 1), " ")
-                        local cmd = table.remove(args, 1):lower()
-                        if commands[cmd] then commands[cmd](sender, unpack(args)) end
-                    end
-                end)
-                registered = true
-            else
-                -- If UE utility isn't ready, use standard API command registration as a backup
-                for n, f in pairs(commands) do
-                    pcall(function() api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end) end)
-                end
-                task.wait(2) -- Wait before trying to find 'on_event' again
-            end
-        end
+-- ?f - Follow owner
+commands.f = function(_,arg)
+    if arg == "off" then
+        if followConnection then followConnection:Disconnect() end
+        send("Follow disabled")
+        return
+    end
+    local ownerPlr = getplayer(owner)
+    if not ownerPlr or not ownerPlr.Character then return end
+    followConnection = RunService.Heartbeat:Connect(function()
+        local hrp = ownerPlr.Character:FindFirstChild("HumanoidRootPart")
+        local me = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and me then me.CFrame = hrp.CFrame * CFrame.new(0,0,-5) end
     end)
+    send("Following "..ownerPlr.DisplayName)
 end
 
-startBot()
+-- ?tp - Teleport to player
+commands.tp = function(_,name)
+    local t = getplayer(name)
+    if t and t.Character then
+        api:teleport(t.Character.HumanoidRootPart.CFrame)
+        send("Teleported to "..t.DisplayName)
+    end
+end
+
+-- ?leave - Leave game
+commands.leave = function() send("Leaving..."); LocalPlayer:Kick("User requested leave") end
+
+-- EMOTES
+for _,em in ipairs(config.Emotes) do
+    commands[em] = function() api:emote(em); send("Emoting: "..em) end
+end
+
+-- =========================
+-- GUI: Commands Tab
+-- =========================
+local commandsTab = api:get_tab("commands") or api:add_tab("commands")
+local cmdBox = commandsTab:add_left_groupbox("Chat Commands")
+cmdBox:add_label("?v → Toggle Void (Character Tab)")
+cmdBox:add_label("?a → Auto ragebot")
+cmdBox:add_label("?reset → Clear ragebot")
+cmdBox:add_label("?f / ?f off → Follow owner")
+cmdBox:add_label("?tp → Teleport to player")
+cmdBox:add_label("?fix → Reset character")
+cmdBox:add_label("?leave → Exit game")
+
+-- =========================
+-- REGISTRATION & LOAD FIX
+-- =========================
+local function initialize()
+    -- Loop until the utility system is actually available to prevent nil errors
+    local currentUtil = utility or _G.utility
+    while not currentUtil do
+        task.wait(1)
+        currentUtil = utility or _G.utility
+    end
+
+    if currentUtil.on_event then
+        currentUtil.on_event("on_message", function(player, message)
+            local sender = type(player) == "string" and Players:FindFirstChild(player) or player
+            if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
+                local args = string.split(message:sub(#prefix + 1), " ")
+                local cmd = table.remove(args, 1):lower()
+                if commands[cmd] then commands[cmd](sender, unpack(args)) end
+            end
+        end)
+    else
+        -- Fallback: Register commands normally if on_event isn't available
+        for n, f in pairs(commands) do
+            pcall(function() api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end) end)
+        end
+    end
+end
+
+-- Start the initialization process safely
+task.spawn(initialize)
