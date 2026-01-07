@@ -167,6 +167,36 @@ commands.s = function()
     end
 end
 
+-- ==========================================
+-- UPDATED KILL AURA SYSTEM
+-- ==========================================
+local function updateAuraWhitelist()
+    if api.set_killaura_ignore then
+        local ignoreNames = {}
+        for name, _ in pairs(whitelist) do
+            table.insert(ignoreNames, name)
+        end
+        api:set_killaura_ignore(ignoreNames)
+    end
+end
+
+commands.aura = function(_, range)
+    local r = tonumber(range) or 15
+    updateAuraWhitelist() -- Ensure friends aren't killed
+    api:set_killaura_range(r)
+    api:set_killaura(true)
+    send("KillAura ENABLED | Range: " .. r .. " (Whitelist Applied)")
+end
+
+commands.unaura = function()
+    api:set_killaura(false)
+    send("KillAura DISABLED")
+end
+
+-- Legacy commands for UI support
+commands.ka = function() commands.aura(nil, 15) end
+commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
+
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
@@ -248,11 +278,11 @@ commands.kill = function(_,name)
     end)
 end
 
--- UPDATED PROTECT LOGIC
 commands.protect = function(_, name)
     local plr = getplayer(name)
     if plr then 
         whitelist[plr.Name] = true
+        updateAuraWhitelist()
         send("Now protecting " .. plr.DisplayName)
     end
 end
@@ -261,18 +291,27 @@ commands.unprotect = function(_, name)
     local plr = getplayer(name)
     if plr then 
         whitelist[plr.Name] = nil
+        updateAuraWhitelist()
         send("No longer protecting " .. plr.DisplayName)
     end
 end
 
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
-    if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
+    if plr then 
+        whitelist[plr.Name]=true
+        updateAuraWhitelist()
+        send(plr.DisplayName.." added to whitelist") 
+    end
 end
 
 commands.unwhitelist = function(_, name)
     local plr = getplayer(name)
-    if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
+    if plr and whitelist[plr.Name] then 
+        whitelist[plr.Name]=nil
+        updateAuraWhitelist()
+        send(plr.DisplayName.." removed from whitelist") 
+    end
 end
 
 commands.sentry = function(_, arg)
@@ -298,9 +337,6 @@ commands.sentry = function(_, arg)
     end
 end
 
-commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
-commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
-
 commands.fix = function()
     send("Character reset!")
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -310,7 +346,6 @@ commands.fix = function()
     end
 end
 
--- ?v COMMAND (UPDATED)
 commands.v = function(_, arg)
     if framework.elements.voidToggle then
         local newState = (arg ~= "off")
@@ -349,11 +384,9 @@ commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the 
 -- COUNTER-ATTACK LISTENER
 -- =========================
 api:on_event("player_got_shot", function(victim_name, attacker_name)
-    -- If the victim is you OR someone in your whitelist
     if victim_name == LocalPlayer.Name or whitelist[victim_name] then
         local attacker = Players:FindFirstChild(attacker_name)
         if attacker and attacker ~= LocalPlayer and not whitelist[attacker_name] then
-            -- Add attacker to active targets
             targets[attacker_name] = true
             api:get_ui_object("ragebot_targets"):SetValue(targets)
             api:set_ragebot(true)
@@ -368,25 +401,17 @@ end)
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
 cmdBox:AddLabel("s or ?s → Summon bot")
-cmdBox:AddLabel("?a → Auto ragebot")
+cmdBox:AddLabel(".aura <range> → Makes it kill everyone")
+cmdBox:AddLabel(".unaura → disables .aura")
 cmdBox:AddLabel("?kill → Kill target")
 cmdBox:AddLabel("?b → Bring target")
 cmdBox:AddLabel("?reset → Clear ragebot")
 cmdBox:AddLabel("?fp / ?fp off → Fake position")
 cmdBox:AddLabel("?f / ?f off → Follow owner")
-cmdBox:AddLabel("?tp → Teleport")
-cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
-cmdBox:AddLabel("?protect / ?unprotect → Counter-Attack Mode")
-cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
-cmdBox:AddLabel("?ka → Enable KillAura")
-cmdBox:AddLabel("?karange <number> → Set KillAura range")
-cmdBox:AddLabel("?fix → Reset character")
+cmdBox:AddLabel("?whitelist / ?unwhitelist → Whitelist")
+cmdBox:AddLabel("?protect / ?unprotect → Counter Mode")
 cmdBox:AddLabel("?v / ?v off → Void bot")
-cmdBox:AddLabel("?flame <player> → Flame target")
-cmdBox:AddLabel("?leave → Leave game")
-for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
--- VOID TAB UI
 local deepVoidTab = api:AddTab("void")
 local mainGroup = deepVoidTab:AddLeftGroupbox("better void")
 framework.elements.voidToggle = mainGroup:AddToggle("true_void_enabled", {
@@ -398,11 +423,10 @@ framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
     Text = "switch speed", Default = 0.05, Min = 0.01, Max = 0.2, Rounding = 2
 })
 
--- =========================
--- REGISTRATION & DETECTION
--- =========================
+-- ==========================================
+-- UPDATED LISTENER & DETECTION
+-- ==========================================
 
--- Standard command registration for API
 for n, f in pairs(commands) do
     pcall(function()
         api:on_command(prefix..n, function(p, ...) 
@@ -411,46 +435,51 @@ for n, f in pairs(commands) do
     end)
 end
 
--- HIGH-PRIORITY "s" DETECTOR (Direct Engine Listener)
-local function handleChatted(msg)
-    local cleanMsg = msg:lower():gsub("%s+", "") -- Remove spaces
+local function masterParser(msg)
+    local lowMsg = msg:lower()
+    local cleanMsg = lowMsg:gsub("%s+", "")
+    
+    -- "s" shortcut
     if cleanMsg == "s" then
         commands.s()
+        return
+    end
+
+    -- .aura and .unaura shortcuts
+    if lowMsg:sub(1,1) == "." then
+        local args = string.split(lowMsg:sub(2), " ")
+        local cmd = table.remove(args, 1)
+        if commands[cmd] then
+            commands[cmd](LocalPlayer, unpack(args))
+        end
+        return
+    end
+    
+    -- ? prefix commands
+    if lowMsg:sub(1, #prefix) == prefix then
+        local args = string.split(lowMsg:sub(#prefix + 1), " ")
+        local cmd = table.remove(args, 1)
+        if commands[cmd] then
+            commands[cmd](LocalPlayer, unpack(args))
+        end
     end
 end
 
--- Hook the owner's chat directly
+-- Connect the parser
 local ownerPlr = Players:FindFirstChild(owner)
-if ownerPlr then
-    ownerPlr.Chatted:Connect(handleChatted)
-end
+if ownerPlr then ownerPlr.Chatted:Connect(masterParser) end
 
--- If owner joins later or script runs early
 Players.PlayerAdded:Connect(function(plr)
-    if plr.Name == owner then
-        plr.Chatted:Connect(handleChatted)
-    end
+    if plr.Name == owner then plr.Chatted:Connect(masterParser) end
 end)
 
--- Original Utility Listener (Backup/Internal)
 pcall(function()
     local utility = getgenv().utility or _G.utility
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
-            if player.Name == owner then
-                local cleanMsg = message:lower():gsub("%s+", "")
-                if cleanMsg == "s" or cleanMsg == (prefix .. "s") then
-                    commands.s()
-                    return
-                end
-                
-                if message:sub(1, #prefix) == prefix then
-                    local args = string.split(message:sub(#prefix + 1), " ")
-                    local cmd = table.remove(args, 1):lower()
-                    if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
-                end
-            end
+            if player.Name == owner then masterParser(message) end
         end)
     end
 end)
 
+send("Bot Loaded! Use .aura [range] and .unaura")
