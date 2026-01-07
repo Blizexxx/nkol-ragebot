@@ -5,13 +5,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
--- FIX: Wait for the utility table to exist before continuing
-local utility = utility or _G.utility
-while not utility do 
-    task.wait() 
-    utility = utility or _G.utility 
-end
-
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
@@ -207,7 +200,7 @@ commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 
 
 -- ?fix resets character
 commands.fix = function()
-    send("Resetting...")
+    send("Character reset!")
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.Health = 0
     else
@@ -287,20 +280,30 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER (Fixed to prevent "on_event" nil error)
+-- REGISTER (Fixed for Nil Error)
 -- =========================
-if utility and utility.on_event then
-    utility.on_event("on_message", function(player, message)
-        local sender = (type(player) == "string") and Players:FindFirstChild(player) or player
-        if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
-            local args = string.split(message:sub(#prefix + 1), " ")
-            local cmd = table.remove(args, 1):lower()
-            if commands[cmd] then commands[cmd](sender, unpack(args)) end
-        end
+
+-- We use a simple loop. If the 'api' has on_command, we use that.
+-- If not, we just use the original method.
+for n, f in pairs(commands) do
+    pcall(function()
+        api:on_command(prefix..n, function(p, ...) 
+            if p.Name == owner then 
+                f(p, ...) 
+            end 
+        end)
     end)
-else
-    -- Standard backup registration
-    for n,f in pairs(commands) do
-        api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
-    end
 end
+
+-- If you want to use the utility 'on_event' specifically, it's safer to do this:
+pcall(function()
+    if utility and utility.on_event then
+        utility.on_event("on_message", function(player, message)
+            if player == owner and message:sub(1, #prefix) == prefix then
+                local args = string.split(message:sub(#prefix + 1), " ")
+                local cmd = table.remove(args, 1):lower()
+                if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
+            end
+        end)
+    end
+end)
