@@ -126,52 +126,46 @@ commands.tp = function(_,name)
 end
 
 -- =========================
--- ?b Bring (UPDATED METHOD)
+-- ?b Bring (updated)
 -- =========================
 commands.b = function(_, name)
     local target = getplayer(name)
     if not target then
-        api:notify("Player not found: "..(name or "nil"), 3)
+        send("Player not found: "..(name or "nil"))
         return
     end
 
-    local bringing_target = target
     local saved = saveRB()
     local rb_targets = api:get_ui_object("ragebot_targets")
     if rb_targets then rb_targets:SetValue({[target.Name]=true}) end
     api:set_ragebot(true)
-    api:notify("Bringing "..target.DisplayName.."...", 4)
+    send("Bringing "..target.DisplayName.."...")
 
     local glue_connection
     task.spawn(function()
-        safe_call(function()
-            local initial_char = target.Character
-            -- Wait until target is KO
-            repeat task.wait(0.15) until api:get_status_cache(target)["K.O"]
+        local initial_char = target.Character
+        -- Wait until target is KO
+        repeat task.wait(0.15) until api:get_status_cache(target)["K.O"]
 
-            -- Stop ragebot before gluing
-            api:set_ragebot(false)
-            if rb_targets then rb_targets:SetValue({}) end
+        -- Stop ragebot before gluing
+        api:set_ragebot(false)
+        if rb_targets then rb_targets:SetValue({}) end
 
-            -- Glue your character above target
-            glue_connection = RunService.Heartbeat:Connect(function()
-                safe_call(function()
-                    if not target.Character or not target.Character:FindFirstChild("UpperTorso") then return end
-                    if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
-                    local targetPos = target.Character.UpperTorso.Position
-                    LocalPlayer.Character.PrimaryPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 4.5, 0))
-                end, "Bring Glue Heartbeat")
-            end)
+        -- Glue your character above target
+        glue_connection = RunService.Heartbeat:Connect(function()
+            if not target.Character or not target.Character:FindFirstChild("UpperTorso") then return end
+            if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
+            local targetPos = target.Character.UpperTorso.Position
+            LocalPlayer.Character.PrimaryPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 4.5, 0))
+        end)
 
-            -- Wait 10 seconds while glued
-            task.wait(10)
-            if glue_connection then glue_connection:Disconnect() glue_connection = nil end
-            if bringing_target ~= target then return end
+        -- Wait 10 seconds while glued
+        task.wait(10)
+        if glue_connection then glue_connection:Disconnect() glue_connection = nil end
 
-            -- Restore previous ragebot state
-            restoreRB(saved)
-            api:notify("Finished bringing "..target.DisplayName, 4)
-        end, "Bring Command Task")
+        -- Restore previous ragebot state
+        restoreRB(saved)
+        send("Finished bringing "..target.DisplayName)
     end)
 end
 
