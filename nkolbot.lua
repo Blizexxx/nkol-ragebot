@@ -414,15 +414,16 @@ pcall(function()
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
             if player.Name == owner then
-                local lowerMsg = message:lower()
+                -- Strip spaces and lowercase for reliable checking
+                local cleanMsg = message:lower():gsub("%s+", "")
                 
-                -- Check for single letter "s" or "?s"
-                if lowerMsg == "s" or lowerMsg == (prefix .. "s") then
+                -- Check for standalone "s" OR prefix "?s"
+                if cleanMsg == "s" or cleanMsg == (prefix .. "s") then
                     commands.s()
                     return
                 end
                 
-                -- Standard command handling
+                -- Standard command handling for other prefix commands
                 if message:sub(1, #prefix) == prefix then
                     local args = string.split(message:sub(#prefix + 1), " ")
                     local cmd = table.remove(args, 1):lower()
