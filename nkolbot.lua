@@ -9,7 +9,7 @@ local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 local api = getgenv().api or _G.api
 if not api then return end
 
--- CONFIG (Full original emote list)
+-- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
     Prefix = "?",
@@ -20,7 +20,7 @@ local config = getgenv().NKOL_RAGEBOT or {
 local owner = config.Owner
 local prefix = config.Prefix
 
--- State Variables
+-- Variables
 local followConnection
 local targets = {}
 local whitelist = {}
@@ -71,25 +71,20 @@ local function restoreRB(s)
 end
 
 -- =========================
--- COMMANDS (Nothing Removed)
+-- ALL COMMANDS (RESTORED)
 -- =========================
 local commands = {}
 
--- ?a Auto ragebot
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
-        if plr then
-            targets[plr.Name] = true
-            send("Autoing "..plr.DisplayName)
-        end
+        if plr then targets[plr.Name] = true; send("Autoing "..plr.DisplayName) end
     end
     local obj = api:get_ui_object("ragebot_targets")
     if obj then obj:SetValue(targets) end
     api:set_ragebot(true)
 end
 
--- ?reset
 commands.reset = function()
     targets = {}
     local obj = api:get_ui_object("ragebot_targets")
@@ -98,13 +93,11 @@ commands.reset = function()
     send("Ragebot cleared")
 end
 
--- ?fp fake position
 commands.fp = function(_,arg)
     api:set_fake(arg ~= "off")
     send("Fake position "..(arg ~= "off" and "enabled" or "disabled"))
 end
 
--- ?f follow owner
 commands.f = function(_,arg)
     if arg == "off" then
         if followConnection then followConnection:Disconnect() end
@@ -121,7 +114,6 @@ commands.f = function(_,arg)
     send("Following "..ownerPlr.DisplayName)
 end
 
--- ?tp
 commands.tp = function(_,name)
     local t = getplayer(name)
     if t and t.Character then
@@ -130,13 +122,11 @@ commands.tp = function(_,name)
     end
 end
 
--- ?b bring
 commands.b = function(_,name)
     local t = getplayer(name)
     if not t then return end
     local saved = saveRB()
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({[t.Name]=true}) end
+    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
     api:set_ragebot(true)
     send("Bringing "..t.DisplayName)
     task.spawn(function()
@@ -148,13 +138,11 @@ commands.b = function(_,name)
     end)
 end
 
--- ?kill
 commands.kill = function(_,name)
     local t = getplayer(name)
     if not t or not MainEvent then return end
     local saved = saveRB()
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({[t.Name]=true}) end
+    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
     api:set_ragebot(true)
     send("Killing "..t.DisplayName)
     task.spawn(function()
@@ -167,17 +155,16 @@ commands.kill = function(_,name)
     end)
 end
 
--- Whitelist logic
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
     if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
 end
+
 commands.unwhitelist = function(_, name)
     local plr = getplayer(name)
     if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
 end
 
--- ?sentry
 commands.sentry = function(_, arg)
     if not arg then send("Usage: ?sentry on | off") return end
     arg = arg:lower()
@@ -199,11 +186,9 @@ commands.sentry = function(_, arg)
     end
 end
 
--- ?ka / ?karange
 commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
 commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
 
--- ?v (Void) Fixed for your UI path
 commands.v = function(_, arg)
     local void_toggle = api:get_ui_object("character_void_enabled")
     if void_toggle then
@@ -213,7 +198,6 @@ commands.v = function(_, arg)
     else send("Void toggle not found.") end
 end
 
--- ?flame
 commands.flame = function(_, targetName)
     if not targetName then send("Usage: ?flame <player>") return end
     local plr = getplayer(targetName)
@@ -230,7 +214,6 @@ commands.flame = function(_, targetName)
     end)
 end
 
--- ?fix
 commands.fix = function()
     send("Character reset!")
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -238,11 +221,14 @@ commands.fix = function()
     else LocalPlayer:LoadCharacter() end
 end
 
--- EMOTES (Integrated)
+-- EMOTES
 for _, em in ipairs(config.Emotes) do
     commands[em] = function()
-        if api and api.emote then api:emote(em) else MainEvent:FireServer("PlayEmote", em) end
         send("Emoting: " .. em)
+        pcall(function()
+            if api and api.emote then api:emote(em)
+            else MainEvent:FireServer("PlayEmote", em) end
+        end)
     end
 end
 
@@ -253,18 +239,17 @@ commands.leave = function() send("Leaving..."); LocalPlayer:Kick("Left") end
 -- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
-local label_list = {"a","kill","b","reset","fp","f","tp","whitelist","sentry","ka","karange","fix","v","flame","leave"}
-for _, l in ipairs(label_list) do cmdBox:AddLabel("?"..l) end
-for _, em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em) end
 
--- Register Commands
+local label_list = {"a", "kill", "b", "reset", "fp", "f", "tp", "whitelist", "unwhitelist", "sentry", "ka", "karange", "fix", "v (Void)", "flame", "leave"}
+for _, l in ipairs(label_list) do cmdBox:AddLabel("?" .. l) end
+for _, em in ipairs(config.Emotes) do cmdBox:AddLabel("?" .. em .. " -> Emote " .. em) end
+
 for n, f in pairs(commands) do
     pcall(function()
         api:on_command(prefix..n, function(p, ...) if p.Name == owner then f(p, ...) end end)
     end)
 end
 
--- Message Event fix
 pcall(function()
     local util = getgenv().utility or _G.utility
     if util and util.on_event then
