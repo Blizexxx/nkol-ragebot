@@ -1,14 +1,13 @@
--- Original owner: Blizexxx / integrated chat system + Vexis Protector Addon
+-- Original owner: Blizexxx / integrated chat system
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
-    Owner = LocalPlayer.ArrowPrimalSkat3r,
+    Owner = LocalPlayer.Name,
     Prefix = "?",
     SelectedWeapons = "LMG/Rifle",
     Emotes = {"floss","samba","twerk","twirl"}
@@ -17,15 +16,11 @@ local config = getgenv().NKOL_RAGEBOT or {
 local owner = config.Owner
 local prefix = config.Prefix
 
--- Follow / ragebot / sentry / protector
+-- Follow / ragebot / sentry
 local followConnection
 local targets = {}
 local whitelist = {}
 local sentry_active = false
-local protected_users = {}
-local active_threats = {}
-local is_strafe_active = false
-local stomp_connection = nil
 
 -- CHAT SYSTEM
 local function send(msg)
@@ -42,6 +37,7 @@ local function getFormattedName(player)
     return string.format("%s (@%s)", player.DisplayName, player.Name)
 end
 
+-- PLAYER FINDER
 local function getplayer(txt)
     if not txt then return end
     txt = txt:lower()
@@ -164,21 +160,6 @@ commands.kill = function(_,name)
     end)
 end
 
--- ?protect / ?unprotect
-commands.protect = function(_,name)
-    local p = getplayer(name)
-    if not p then return end
-    protected_users[p.Name] = true
-    send(p.DisplayName.." is now protected")
-end
-
-commands.unprotect = function(_,name)
-    local p = getplayer(name)
-    if not p then return end
-    protected_users[p.Name] = nil
-    send(p.DisplayName.." is no longer protected")
-end
-
 -- WHITELIST / UNWHITELIST
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
@@ -189,30 +170,101 @@ commands.unwhitelist = function(_, name)
     if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
 end
 
--- CHAT DAMAGE MONITOR: auto-ragebot if protected user shot
-api:on_event("player_got_shot", function(victim_name, attacker_name, part, tool, origin, position)
-    local victim = Players:FindFirstChild(victim_name)
-    local attacker = Players:FindFirstChild(attacker_name)
-    if victim and protected_users[victim.Name] and attacker and attacker ~= LocalPlayer then
-        local saved = saveRB()
-        api:get_ui_object("ragebot_targets"):SetValue({[attacker.Name]=true})
-        api:set_ragebot(true)
-        task.spawn(function()
-            repeat task.wait(.15) until api:get_status_cache(attacker)["K.O"]
-            api:set_ragebot(false)
-            restoreRB(saved)
-        end)
-    end
-end)
+-- SENTRY
+commands.sentry = function(_, arg)
+    if not arg then send("Usage: ?sentry on | off") return end
+    arg = arg:lower()
+    local ownerPlr = getplayer(owner)
+    if not ownerPlr then return end
+    local targets_obj = api:get_ui_object("protector_targets")
+    local protector_toggle = api:get_ui_object("protector_active")
+    if arg == "on" then
+        if sentry_active then send("Sentry already active") return end
+        sentry_active=true; send("Sentry enabled: Protecting "..ownerPlr.DisplayName)
+        if protector_toggle then protector_toggle:SetValue(true) end
+        local sentry_targets = {}; sentry_targets[getFormattedName(ownerPlr)]=true
+        for name,_ in pairs(whitelist) do local p=Players:FindFirstChild(name); if p then sentry_targets[getFormattedName(p)]=true end end
+        if targets_obj then targets_obj:SetValue(sentry_targets) end
+    elseif arg == "off" then
+        if not sentry_active then send("Sentry already inactive") return end
+        sentry_active=false; send("Sentry disabled")
+        if protector_toggle then protector_toggle:SetValue(false) end
+        if targets_obj then targets_obj:SetValue({}) end
+        restoreRB(saveRB())
+    else send("Usage: ?sentry on | off") end
+end
 
+-- ?ka / ?karange
+commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
+commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
+
+-- ?fix resets character
+commands.fix = function()
+    if api and api.reset_character then
+        api:reset_character()
+    else
+        LocalPlayer:LoadCharacter()
+    end
+    send("Character reset!")
+end
+
+-- ?v void bot
+commands.v = function()
+    if api and api.toggle_void then
+        api.toggle_void()
+        send("Better Void toggled!")
+    else
+        send("Void API not found.")
+    end
+end
+
+-- ?flame <player>
+commands.flame = function(_, targetName)
+    if not targetName then 
+        send("Usage: ?flame <player>")
+        return
+    end
+    local plr = getplayer(targetName)
+    if not plr then
+        send("Player not found: "..targetName)
+        return
+    end
+
+    local saved = saveRB()
+    local rb_targets = api:get_ui_object("ragebot_targets")
+    if rb_targets then rb_targets:SetValue({[plr.Name] = true}) end
+
+    local rb_flame = api:get_ui_object("ragebot_flame")
+    if rb_flame then rb_flame:SetValue(true) end
+
+    api:set_ragebot(true)
+    send("Flame activated on "..plr.DisplayName)
+
+    task.spawn(function()
+        while plr.Parent and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") do
+            task.wait(0.5)
+        end
+        restoreRB(saved)
+        send("Flame finished for "..plr.DisplayName)
+    end)
+end
+
+-- EMOTES
+for _,em in ipairs(config.Emotes) do
+    commands[em] = function() api:emote(em); send("Emoting: "..em) end
+end
+
+-- ?leave
+commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
+
+-- =========================
 -- GUI: Commands Tab
+-- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
 cmdBox:AddLabel("?a → Auto ragebot")
 cmdBox:AddLabel("?kill → Kill target")
 cmdBox:AddLabel("?b → Bring target")
-cmdBox:AddLabel("?protect → Protect target")
-cmdBox:AddLabel("?unprotect → Unprotect target")
 cmdBox:AddLabel("?reset → Clear ragebot")
 cmdBox:AddLabel("?fp / ?fp off → Fake position")
 cmdBox:AddLabel("?f / ?f off → Follow owner")
@@ -227,11 +279,9 @@ cmdBox:AddLabel("?flame <player> → Flame target")
 cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
--- REGISTER COMMANDS
+-- =========================
+-- REGISTER
+-- =========================
 for n,f in pairs(commands) do
-    api:on_command(prefix..n, function(p,...)
-        if p.Name == owner then f(p,...) end
-    end)
+    api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
-
-api:notify("Ragebot + Protector Loaded", 3)
