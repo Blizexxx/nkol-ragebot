@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
--- FIX: Ensure utility is defined to prevent indexing nil
+-- Safety: Define utility if not globally present to stop the 'on_event' error
 local utility = utility or _G.utility
 
 -- CONFIG
@@ -203,7 +203,6 @@ commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 
 
 -- ?fix resets character
 commands.fix = function()
-    send("Resetting character...")
     if api and api.reset_character then
         api:reset_character()
     elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -211,24 +210,25 @@ commands.fix = function()
     else
         LocalPlayer:LoadCharacter()
     end
+    send("Character reset!")
 end
 
--- ?v void bot - UPDATED WITH CORRECT UI OBJECT NAMES
+-- ?v void bot - REWRITTEN TO TARGET THE UI OBJECT
 commands.v = function()
-    -- These are common names for the Void toggle in UE
-    local voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active") or api:get_ui_object("Void Enabled")
+    -- UE scripts often use these internal names for the Void enabled checkbox
+    local voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active") or api:get_ui_object("void_enable")
     
     if voidEnabled then
         local current = voidEnabled.Value
-        voidEnabled:SetValue(not current) -- Toggles the checkbox
-        send("Void bot is now " .. (not current and "ON" or "OFF"))
+        voidEnabled:SetValue(not current)
+        send("Void is now " .. (not current and "ON" or "OFF"))
     else
-        -- Last resort if UI object names don't match documentation
+        -- If UI object fails, try calling the direct function if it exists
         if api and api.toggle_void then
             api:toggle_void()
-            send("Void toggled via API function.")
+            send("Void toggled.")
         else
-            send("Error: Void UI toggle not found in this utility.")
+            send("Void UI object not found. Checking script internal name...")
         end
     end
 end
@@ -295,27 +295,22 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER (Using pcall to handle API differences)
+-- REGISTER (Fixed for Nil Error)
 -- =========================
-local function runRegistration()
-    if utility and utility.on_event then
-        -- Using UE documentation's event system
-        utility.on_event("on_message", function(player, message)
-            local sender = type(player) == "string" and Players:FindFirstChild(player) or player
-            if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
-                local args = string.split(message:sub(#prefix + 1), " ")
-                local cmd = table.remove(args, 1):lower()
-                if commands[cmd] then commands[cmd](sender, unpack(args)) end
-            end
-        end)
-    else
-        -- Backup registration for standard APIs
-        for n,f in pairs(commands) do
-            pcall(function()
-                api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end)
-            end)
+if utility and utility.on_event then
+    utility.on_event("on_message", function(player, message)
+        local sender = type(player) == "string" and Players:FindFirstChild(player) or player
+        if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
+            local args = string.split(message:sub(#prefix + 1), " ")
+            local cmd = table.remove(args, 1):lower()
+            if commands[cmd] then commands[cmd](sender, unpack(args)) end
         end
+    end)
+else
+    -- Fallback for standard APIs
+    for n,f in pairs(commands) do
+        pcall(function()
+            api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end)
+        end)
     end
 end
-
-pcall(runRegistration)
