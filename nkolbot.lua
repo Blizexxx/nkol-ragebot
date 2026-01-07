@@ -167,6 +167,19 @@ commands.s = function()
     end
 end
 
+-- AURA COMMANDS
+commands.aura = function(_, range)
+    local r = tonumber(range) or 15
+    api:set_killaura_range(r)
+    api:set_killaura(true)
+    send("KillAura Enabled | Range: " .. r)
+end
+
+commands.unaura = function()
+    api:set_killaura(false)
+    send("KillAura Disabled")
+end
+
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
@@ -248,7 +261,6 @@ commands.kill = function(_,name)
     end)
 end
 
--- UPDATED PROTECT LOGIC
 commands.protect = function(_, name)
     local plr = getplayer(name)
     if plr then 
@@ -298,9 +310,6 @@ commands.sentry = function(_, arg)
     end
 end
 
-commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
-commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
-
 commands.fix = function()
     send("Character reset!")
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -310,7 +319,6 @@ commands.fix = function()
     end
 end
 
--- ?v COMMAND (UPDATED)
 commands.v = function(_, arg)
     if framework.elements.voidToggle then
         local newState = (arg ~= "off")
@@ -349,11 +357,9 @@ commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the 
 -- COUNTER-ATTACK LISTENER
 -- =========================
 api:on_event("player_got_shot", function(victim_name, attacker_name)
-    -- If the victim is you OR someone in your whitelist
     if victim_name == LocalPlayer.Name or whitelist[victim_name] then
         local attacker = Players:FindFirstChild(attacker_name)
         if attacker and attacker ~= LocalPlayer and not whitelist[attacker_name] then
-            -- Add attacker to active targets
             targets[attacker_name] = true
             api:get_ui_object("ragebot_targets"):SetValue(targets)
             api:set_ragebot(true)
@@ -363,46 +369,10 @@ api:on_event("player_got_shot", function(victim_name, attacker_name)
 end)
 
 -- =========================
--- GUI: TABS & GROUPS
--- =========================
-local commandsTab = api:GetTab("commands") or api:AddTab("commands")
-local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
-cmdBox:AddLabel("s or ?s → Summon bot")
-cmdBox:AddLabel("?a → Auto ragebot")
-cmdBox:AddLabel("?kill → Kill target")
-cmdBox:AddLabel("?b → Bring target")
-cmdBox:AddLabel("?reset → Clear ragebot")
-cmdBox:AddLabel("?fp / ?fp off → Fake position")
-cmdBox:AddLabel("?f / ?f off → Follow owner")
-cmdBox:AddLabel("?tp → Teleport")
-cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
-cmdBox:AddLabel("?protect / ?unprotect → Counter-Attack Mode")
-cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
-cmdBox:AddLabel("?ka → Enable KillAura")
-cmdBox:AddLabel("?karange <number> → Set KillAura range")
-cmdBox:AddLabel("?fix → Reset character")
-cmdBox:AddLabel("?v / ?v off → Void bot")
-cmdBox:AddLabel("?flame <player> → Flame target")
-cmdBox:AddLabel("?leave → Leave game")
-for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
-
--- VOID TAB UI
-local deepVoidTab = api:AddTab("void")
-local mainGroup = deepVoidTab:AddLeftGroupbox("better void")
-framework.elements.voidToggle = mainGroup:AddToggle("true_void_enabled", {
-    Text = "better void",
-    Default = false,
-    Callback = function(v) if v then startDeepVoid() else stopDeepVoid() end end
-})
-framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
-    Text = "switch speed", Default = 0.05, Min = 0.01, Max = 0.2, Rounding = 2
-})
-
--- =========================
--- REGISTRATION & DETECTION
+-- REGISTRATION & LISTENER
 -- =========================
 
--- Standard command registration for API
+-- Standard command registration
 for n, f in pairs(commands) do
     pcall(function()
         api:on_command(prefix..n, function(p, ...) 
@@ -411,45 +381,56 @@ for n, f in pairs(commands) do
     end)
 end
 
--- HIGH-PRIORITY "s" DETECTOR (Direct Engine Listener)
+-- MASTER CHAT LISTENER (Supports .aura, s, and ?)
 local function handleChatted(msg)
-    local cleanMsg = msg:lower():gsub("%s+", "") -- Remove spaces
+    local ownerPlr = Players:FindFirstChild(owner)
+    if not ownerPlr then return end
+    
+    local lowerMsg = msg:lower()
+    local cleanMsg = lowerMsg:gsub("%s+", "") -- Strip all spaces for standalone checks
+    
+    -- 1. Check for standalone "s"
     if cleanMsg == "s" then
         commands.s()
+        return
+    end
+
+    -- 2. Check for "." prefix commands (aura / unaura)
+    if lowerMsg:sub(1,1) == "." then
+        local args = string.split(lowerMsg:sub(2), " ")
+        local cmd = table.remove(args, 1)
+        if commands[cmd] then
+            commands[cmd](LocalPlayer, unpack(args))
+        end
+        return
+    end
+
+    -- 3. Check for standard prefix "?" commands
+    if lowerMsg:sub(1, #prefix) == prefix then
+        local args = string.split(lowerMsg:sub(#prefix + 1), " ")
+        local cmd = table.remove(args, 1)
+        if commands[cmd] then
+            commands[cmd](LocalPlayer, unpack(args))
+        end
     end
 end
 
--- Hook the owner's chat directly
-local ownerPlr = Players:FindFirstChild(owner)
-if ownerPlr then
-    ownerPlr.Chatted:Connect(handleChatted)
-end
+-- Initialize chat listeners
+local currentOwner = Players:FindFirstChild(owner)
+if currentOwner then currentOwner.Chatted:Connect(handleChatted) end
 
--- If owner joins later or script runs early
 Players.PlayerAdded:Connect(function(plr)
     if plr.Name == owner then
         plr.Chatted:Connect(handleChatted)
     end
 end)
 
--- Original Utility Listener (Backup/Internal)
+-- Backup Utility Listener
 pcall(function()
     local utility = getgenv().utility or _G.utility
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
-            if player.Name == owner then
-                local cleanMsg = message:lower():gsub("%s+", "")
-                if cleanMsg == "s" or cleanMsg == (prefix .. "s") then
-                    commands.s()
-                    return
-                end
-                
-                if message:sub(1, #prefix) == prefix then
-                    local args = string.split(message:sub(#prefix + 1), " ")
-                    local cmd = table.remove(args, 1):lower()
-                    if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
-                end
-            end
+            if player.Name == owner then handleChatted(message) end
         end)
     end
 end)
