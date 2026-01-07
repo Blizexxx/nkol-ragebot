@@ -8,7 +8,7 @@ local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
-    Owner = LocalPlayer.Name,
+    Owner = LocalPlayer.ArrowPrimalSkat3r,
     Prefix = "?",
     SelectedWeapons = "LMG/Rifle",
     Emotes = {"floss","samba","twerk","twirl"}
