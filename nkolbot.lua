@@ -68,7 +68,7 @@ end
 local commands = {}
 
 -- ?a Auto ragebot
-commands.a = function(_, ...)
+commands.a = function(_, ... )
     for _,n in pairs({...}) do
         local plr = getplayer(n)
         if plr then
@@ -205,15 +205,26 @@ end
 
 -- ?v void bot
 commands.v = function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        api:teleport(CFrame.new(0,-500,0))
-        send("Bot voided!")
+    if api and api.toggle_void then
+        api.toggle_void()
+        send("Void toggled!")
+    else
+        -- fallback: basic teleport into void
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            api:teleport(CFrame.new(0,-500,0))
+            send("Bot voided!")
+        end
     end
 end
 
 -- EMOTES
 for _,em in ipairs(config.Emotes) do
-    commands[em] = function() api:emote(em); send("Emoting: "..em) end
+    commands[em] = function()
+        if api and api.emote then
+            api:emote(em)
+            send("Emoting: "..em)
+        end
+    end
 end
 
 -- ?leave
@@ -241,7 +252,30 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER
+-- CHAT LISTENER FOR VOID
+-- =========================
+local function on_chat(player, message)
+    if player ~= LocalPlayer then return false end
+    if message:lower() == "?v" then
+        if api and api.toggle_void then
+            pcall(api.toggle_void)
+            send("Void toggled via chat!")
+        else
+            send("Void API not found.")
+        end
+        return true
+    end
+    return false
+end
+
+if LocalPlayer.Chatted then
+    LocalPlayer.Chatted:Connect(function(msg)
+        on_chat(LocalPlayer, msg)
+    end)
+end
+
+-- =========================
+-- REGISTER COMMANDS
 -- =========================
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
