@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
--- Safety: Define utility if not globally present
+-- FIX: Ensure utility is defined to prevent indexing nil
 local utility = utility or _G.utility
 
 -- CONFIG
@@ -203,6 +203,7 @@ commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 
 
 -- ?fix resets character
 commands.fix = function()
+    send("Resetting character...")
     if api and api.reset_character then
         api:reset_character()
     elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -210,25 +211,24 @@ commands.fix = function()
     else
         LocalPlayer:LoadCharacter()
     end
-    send("Character reset!")
 end
 
--- ?v void bot - FIXED to enable/disable the UI toggle
+-- ?v void bot - UPDATED WITH CORRECT UI OBJECT NAMES
 commands.v = function()
-    -- Attempts to find the "enabled" checkbox for the Void module
-    local voidToggle = api:get_ui_object("void_enabled") or api:get_ui_object("void_active")
+    -- These are common names for the Void toggle in UE
+    local voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active") or api:get_ui_object("Void Enabled")
     
-    if voidToggle then
-        local newState = not voidToggle.Value
-        voidToggle:SetValue(newState)
-        send("Void toggle: " .. (newState and "ENABLED" or "DISABLED"))
+    if voidEnabled then
+        local current = voidEnabled.Value
+        voidEnabled:SetValue(not current) -- Toggles the checkbox
+        send("Void bot is now " .. (not current and "ON" or "OFF"))
     else
-        -- Fallback if the UI object name is different
+        -- Last resort if UI object names don't match documentation
         if api and api.toggle_void then
-            api.toggle_void()
-            send("Void toggled via API.")
+            api:toggle_void()
+            send("Void toggled via API function.")
         else
-            send("Void UI object not found.")
+            send("Error: Void UI toggle not found in this utility.")
         end
     end
 end
@@ -295,12 +295,12 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER (Fixed for Nil Error and Utility Event)
+-- REGISTER (Using pcall to handle API differences)
 -- =========================
-local function registerCommands()
+local function runRegistration()
     if utility and utility.on_event then
+        -- Using UE documentation's event system
         utility.on_event("on_message", function(player, message)
-            -- Support both name string or player object
             local sender = type(player) == "string" and Players:FindFirstChild(player) or player
             if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
                 local args = string.split(message:sub(#prefix + 1), " ")
@@ -309,7 +309,7 @@ local function registerCommands()
             end
         end)
     else
-        -- Fallback loop if utility is not available
+        -- Backup registration for standard APIs
         for n,f in pairs(commands) do
             pcall(function()
                 api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end)
@@ -318,5 +318,4 @@ local function registerCommands()
     end
 end
 
--- Final check to prevent nil indexing
-pcall(registerCommands)
+pcall(runRegistration)
