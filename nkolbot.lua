@@ -153,6 +153,20 @@ end
 -- =========================
 local commands = {}
 
+-- SUMMON COMMAND (Teleport to owner)
+commands.s = function()
+    local ownerPlr = getplayer(owner)
+    if ownerPlr and ownerPlr.Character then
+        local hrp = ownerPlr.Character:FindFirstChild("HumanoidRootPart")
+        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and myHrp then
+            myHrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            api:teleport(hrp.CFrame)
+            send("Summoned to " .. ownerPlr.DisplayName)
+        end
+    end
+end
+
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
@@ -353,6 +367,7 @@ end)
 -- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
+cmdBox:AddLabel("s or ?s → Summon bot")
 cmdBox:AddLabel("?a → Auto ragebot")
 cmdBox:AddLabel("?kill → Kill target")
 cmdBox:AddLabel("?b → Bring target")
@@ -398,10 +413,21 @@ pcall(function()
     local utility = getgenv().utility or _G.utility
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
-            if player.Name == owner and message:sub(1, #prefix) == prefix then
-                local args = string.split(message:sub(#prefix + 1), " ")
-                local cmd = table.remove(args, 1):lower()
-                if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
+            if player.Name == owner then
+                local lowerMsg = message:lower()
+                
+                -- Check for single letter "s" or "?s"
+                if lowerMsg == "s" or lowerMsg == (prefix .. "s") then
+                    commands.s()
+                    return
+                end
+                
+                -- Standard command handling
+                if message:sub(1, #prefix) == prefix then
+                    local args = string.split(message:sub(#prefix + 1), " ")
+                    local cmd = table.remove(args, 1):lower()
+                    if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
+                end
             end
         end)
     end
