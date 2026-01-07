@@ -1,4 +1,5 @@
 -- Original owner: Blizexxx / integrated chat system
+-- Integrated with Better Void Framework
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,7 +8,7 @@ local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 local api = getfenv().api or {}
 
 -- ==========================================
--- BETTER VOID FRAMEWORK (PROTCHY INTEGRATION)
+-- BETTER VOID FRAMEWORK (PROTCHY)
 -- ==========================================
 local framework = {
     connections = {},
@@ -90,7 +91,7 @@ local function startDeepVoid()
 end
 
 -- ==========================================
--- ORIGINAL CONFIG & VARIABLES
+-- CONFIG & ORIGINAL VARIABLES
 -- ==========================================
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
@@ -107,7 +108,7 @@ local targets = {}
 local whitelist = {}
 local sentry_active = false
 
--- ORIGINAL CHAT SYSTEM
+-- CHAT SYSTEM
 local function send(msg)
     pcall(function()
         if api and api.chat then api:chat(msg)
@@ -129,7 +130,7 @@ local function getplayer(txt)
     end
 end
 
--- ORIGINAL RAGEBOT SAVE / RESTORE
+-- RAGEBOT SAVE / RESTORE
 local function saveRB()
     return {
         targets = api:get_ui_object("ragebot_targets").Value or {},
@@ -149,7 +150,7 @@ local function restoreRB(s)
 end
 
 -- =========================
--- COMMANDS (FULL RESTORE)
+-- COMMANDS
 -- =========================
 local commands = {}
 
@@ -279,15 +280,23 @@ commands.fix = function()
     end
 end
 
--- ?v COMMAND (UPDATED TO USE BETTER VOID TOGGLE)
-commands.v = function()
-    if framework.elements.voidToggle then
-        local targetState = not framework.elements.voidToggle.Value
-        framework.elements.voidToggle:SetValue(targetState)
-        send("Better Void toggled: " .. (targetState and "ON" or "OFF"))
+-- ?v COMMAND (Handles ?v, ?v on, ?v off)
+commands.v = function(_, arg)
+    if not framework.elements.voidToggle then send("Void toggle not found."); return end
+    
+    local currentState = framework.elements.voidToggle.Value
+    local newState
+    
+    if arg == "on" then
+        newState = true
+    elseif arg == "off" then
+        newState = false
     else
-        send("Better Void toggle not found in UI.")
+        newState = not currentState -- Standard toggle if no arg
     end
+    
+    framework.elements.voidToggle:SetValue(newState)
+    send("Better Void: " .. (newState and "ENABLED" or "DISABLED"))
 end
 
 commands.flame = function(_, targetName)
@@ -350,7 +359,6 @@ framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
 mainGroup:AddButton("emergency return", function()
     framework.forceReturnCFrame = CFrame.new(0, 200, 0)
     framework.elements.voidToggle:SetValue(false)
-    send("Emergency return triggered.")
 end)
 
 -- =========================
@@ -376,3 +384,5 @@ pcall(function()
         end)
     end
 end)
+
+api:Notify("Full Integrated Bot Loaded.", 4)
