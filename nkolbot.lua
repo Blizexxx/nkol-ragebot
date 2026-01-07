@@ -62,9 +62,7 @@ local function restoreRB(s)
     api:set_ragebot(s.enabled)
 end
 
--- =========================
 -- COMMANDS
--- =========================
 local commands = {}
 
 -- ?a Auto ragebot
@@ -155,6 +153,36 @@ commands.kill = function(_,name)
     end)
 end
 
+-- ?fix (reset character)
+commands.fix = function()
+    if LocalPlayer.Character then
+        LocalPlayer:LoadCharacter()
+        send("Character reset!")
+    end
+end
+
+-- ?v (void bot)
+local voidConnection
+commands.v = function()
+    if voidConnection then
+        voidConnection:Disconnect()
+        voidConnection = nil
+        send("Void stopped!")
+        return
+    end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        voidConnection = RunService.Heartbeat:Connect(function()
+            local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local x = math.random(-50,50)
+                local z = math.random(-50,50)
+                hrp.CFrame = CFrame.new(x, -500, z)
+            end
+        end)
+        send("Bot is now voiding!")
+    end
+end
+
 -- WHITELIST / UNWHITELIST
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
@@ -193,24 +221,6 @@ end
 commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
 commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
 
--- ?fix resets character
-commands.fix = function()
-    if api and api.reset_character then
-        api:reset_character()
-    else
-        LocalPlayer:LoadCharacter()
-    end
-    send("Character reset!")
-end
-
--- ?v void bot
-commands.v = function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        api:teleport(CFrame.new(0,-500,0))
-        send("Bot voided!")
-    end
-end
-
 -- EMOTES
 for _,em in ipairs(config.Emotes) do
     commands[em] = function() api:emote(em); send("Emoting: "..em) end
@@ -219,30 +229,7 @@ end
 -- ?leave
 commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
 
--- =========================
--- GUI: Commands Tab
--- =========================
-local commandsTab = api:GetTab("commands") or api:AddTab("commands")
-local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
-cmdBox:AddLabel("?a → Auto ragebot")
-cmdBox:AddLabel("?kill → Kill target")
-cmdBox:AddLabel("?b → Bring target")
-cmdBox:AddLabel("?reset → Clear ragebot")
-cmdBox:AddLabel("?fp / ?fp off → Fake position")
-cmdBox:AddLabel("?f / ?f off → Follow owner")
-cmdBox:AddLabel("?tp → Teleport")
-cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
-cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
-cmdBox:AddLabel("?ka → Enable KillAura")
-cmdBox:AddLabel("?karange <number> → Set KillAura range")
-cmdBox:AddLabel("?fix → Reset character")
-cmdBox:AddLabel("?v → Void bot")
-cmdBox:AddLabel("?leave → Leave game")
-for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
-
--- =========================
 -- REGISTER
--- =========================
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
