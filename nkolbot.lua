@@ -213,23 +213,26 @@ commands.fix = function()
     send("Character reset!")
 end
 
--- ?v void bot - REWRITTEN TO TARGET THE UI OBJECT
+-- ?v void bot - TARGETING THE "VOID" TAB SPECIFICALLY
 commands.v = function()
-    -- UE scripts often use these internal names for the Void enabled checkbox
-    local voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active") or api:get_ui_object("void_enable")
+    -- UE often organizes UI objects by tab name. Attempting to locate the "enabled" toggle in the "void" tab
+    local voidTab = api:GetTab("void")
+    local voidEnabled = nil
+
+    if voidTab then
+        -- Search for the toggle object inside the tab
+        voidEnabled = voidTab:get_ui_object("enabled") or voidTab:get_ui_object("void_enabled")
+    else
+        -- Fallback: Search globally if tab grouping isn't used for objects
+        voidEnabled = api:get_ui_object("void_enabled") or api:get_ui_object("void_active")
+    end
     
     if voidEnabled then
-        local current = voidEnabled.Value
-        voidEnabled:SetValue(not current)
-        send("Void is now " .. (not current and "ON" or "OFF"))
+        local newState = not voidEnabled.Value
+        voidEnabled:SetValue(newState)
+        send("Void bot: " .. (newState and "ENABLED" or "DISABLED"))
     else
-        -- If UI object fails, try calling the direct function if it exists
-        if api and api.toggle_void then
-            api:toggle_void()
-            send("Void toggled.")
-        else
-            send("Void UI object not found. Checking script internal name...")
-        end
+        send("Error: Could not locate Void toggle in Void tab.")
     end
 end
 
@@ -295,7 +298,7 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER (Fixed for Nil Error)
+-- REGISTER
 -- =========================
 if utility and utility.on_event then
     utility.on_event("on_message", function(player, message)
