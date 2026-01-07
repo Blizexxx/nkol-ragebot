@@ -21,6 +21,7 @@ local followConnection
 local targets = {}
 local whitelist = {}
 local sentry_active = false
+local flame_targets = {}
 
 -- CHAT SYSTEM
 local function send(msg)
@@ -68,7 +69,7 @@ end
 local commands = {}
 
 -- ?a Auto ragebot
-commands.a = function(_, ... )
+commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
         if plr then
@@ -205,25 +206,34 @@ end
 
 -- ?v void bot
 commands.v = function()
-    if api and api.toggle_void then
+    if api.toggle_void then
         api.toggle_void()
-        send("Void toggled!")
+        send("Void activated!")
     else
-        -- fallback: basic teleport into void
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            api:teleport(CFrame.new(0,-500,0))
-            send("Bot voided!")
-        end
+        send("Void API not found")
     end
+end
+
+-- ?flame <player>
+commands.flame = function(_, targetName)
+    if not targetName then 
+        api:notify("[VEXIS] Usage: ?flame <player>", 3)
+        return
+    end
+    local plr = getplayer(targetName)
+    if not plr then 
+        api:notify("[VEXIS] Player not found: "..targetName, 3)
+        return
+    end
+    flame_targets[plr.Name] = true
+    api:notify("[VEXIS] Flame enabled for "..plr.DisplayName, 4)
 end
 
 -- EMOTES
 for _,em in ipairs(config.Emotes) do
-    commands[em] = function()
-        if api and api.emote then
-            api:emote(em)
-            send("Emoting: "..em)
-        end
+    commands[em] = function() 
+        if api and api.emote then api:emote(em) end
+        send("Emoting: "..em) 
     end
 end
 
@@ -248,31 +258,9 @@ cmdBox:AddLabel("?ka → Enable KillAura")
 cmdBox:AddLabel("?karange <number> → Set KillAura range")
 cmdBox:AddLabel("?fix → Reset character")
 cmdBox:AddLabel("?v → Void bot")
+cmdBox:AddLabel("?flame <player> → Flame target")
 cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
-
--- =========================
--- CHAT LISTENER FOR VOID
--- =========================
-local function on_chat(player, message)
-    if player ~= LocalPlayer then return false end
-    if message:lower() == "?v" then
-        if api and api.toggle_void then
-            pcall(api.toggle_void)
-            send("Void toggled via chat!")
-        else
-            send("Void API not found.")
-        end
-        return true
-    end
-    return false
-end
-
-if LocalPlayer.Chatted then
-    LocalPlayer.Chatted:Connect(function(msg)
-        on_chat(LocalPlayer, msg)
-    end)
-end
 
 -- =========================
 -- REGISTER COMMANDS
@@ -280,3 +268,28 @@ end
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
+
+-- =========================
+-- FLAME AUTO ENABLE IN RAGEBOT
+-- =========================
+local old_refreshRagebot = refreshRagebot or function() end
+refreshRagebot = function(stop_reason)
+    pcall(function()
+        old_refreshRagebot(stop_reason)
+        local rb_targets = api:get_ui_object("ragebot_targets")
+        local rb_flame = api:get_ui_object("ragebot_flame")
+        if rb_targets and rb_flame then
+            local flame_active = false
+            for name,_ in pairs(flame_targets) do
+                local p = Players:FindFirstChild(name)
+                if p and rb_targets.Value and rb_targets.Value[p.Name] then
+                    flame_active = true
+                    break
+                end
+            end
+            rb_flame:SetValue(flame_active)
+        end
+    end)
+end
+api:on_event("player_killed", function(pName) flame_targets[pName] = nil end)
+api:on_event("player_left", function(pName) flame_targets[pName] = nil end)
