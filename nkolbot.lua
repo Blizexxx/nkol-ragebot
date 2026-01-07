@@ -4,12 +4,94 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
+local api = getfenv().api or getgenv().api or {}
 
--- Safety check for the API
-local api = getgenv().api or _G.api
-if not api then return end
+-- ==========================================
+-- BETTER VOID FRAMEWORK (PROTCHY INTEGRATION)
+-- ==========================================
+local framework = {
+    connections = {},
+    elements = {},
+    voidActive = false,
+    originalCFrame = nil,
+    lastSwitch = 0,
+    currentVoidIndex = 1,
+    isTeleporting = false,
+    isReturning = false,
+    forceReturnCFrame = nil
+}
 
--- CONFIG
+local function find_first_child(obj, name) return obj and obj:FindFirstChild(name) end
+
+local function is_cframe_in_void(cf)
+    if not cf then return true end
+    local pos = cf.Position
+    return pos.Y < -10000 or math.abs(pos.X) > 500000 or math.abs(pos.Z) > 500000
+end
+
+local function getSafeOriginalCFrame(currentHRP)
+    if currentHRP and not is_cframe_in_void(currentHRP.CFrame) then return currentHRP.CFrame end
+    return CFrame.new(0, 150, 0)
+end
+
+local function generateDeepVoidPositions()
+    local positions = {}
+    local deepY = {-2000000, -5000000, -10000000, -20000000, -50000000}
+    local farCoords = {-1000000, -500000, -250000, -100000, 100000, 250000, 500000, 1000000}
+    for i = 1, 25 do
+        table.insert(positions, CFrame.new(
+            farCoords[math.random(1, #farCoords)] + math.random(-10000, 10000),
+            deepY[math.random(1, #deepY)] + math.random(-10000, 10000),
+            farCoords[math.random(1, #farCoords)] + math.random(-10000, 10000)
+        ))
+    end
+    return positions
+end
+
+local deepVoidPositions = generateDeepVoidPositions()
+local evasionConn
+
+local function stopDeepVoid()
+    if framework.isReturning then return end
+    framework.isReturning = true
+    if evasionConn then evasionConn:Disconnect() evasionConn = nil end
+    framework.voidActive = false
+    local char = LocalPlayer.Character
+    local hrp = char and find_first_child(char, "HumanoidRootPart")
+    if hrp and (framework.originalCFrame or framework.forceReturnCFrame) then
+        local dest = framework.forceReturnCFrame or framework.originalCFrame
+        hrp.AssemblyLinearVelocity = Vector3.new()
+        api:teleport(dest)
+        framework.originalCFrame = nil
+        framework.forceReturnCFrame = nil
+    end
+    framework.isReturning = false
+end
+
+local function startDeepVoid()
+    local char = LocalPlayer.Character
+    local hrp = char and find_first_child(char, "HumanoidRootPart")
+    if not hrp then return end
+    if not framework.originalCFrame then framework.originalCFrame = getSafeOriginalCFrame(hrp) end
+    framework.voidActive = true
+    evasionConn = RunService.Heartbeat:Connect(function()
+        if not (framework.elements.voidToggle and framework.elements.voidToggle.Value) then
+            stopDeepVoid()
+            return
+        end
+        local speed = framework.elements.speedSlider and framework.elements.speedSlider.Value or 0.05
+        if tick() - framework.lastSwitch < speed then return end
+        framework.currentVoidIndex = (framework.currentVoidIndex % #deepVoidPositions) + 1
+        local target = deepVoidPositions[framework.currentVoidIndex]
+        hrp.AssemblyLinearVelocity = Vector3.new()
+        pcall(function() api:teleport(target) end)
+        framework.lastSwitch = tick()
+    end)
+end
+
+-- ==========================================
+-- CONFIG & ORIGINAL VARIABLES
+-- ==========================================
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
     Prefix = "?",
@@ -20,7 +102,6 @@ local config = getgenv().NKOL_RAGEBOT or {
 local owner = config.Owner
 local prefix = config.Prefix
 
--- Follow / ragebot / sentry
 local followConnection
 local targets = {}
 local whitelist = {}
@@ -38,7 +119,6 @@ local function getFormattedName(player)
     return string.format("%s (@%s)", player.DisplayName, player.Name)
 end
 
--- PLAYER FINDER
 local function getplayer(txt)
     if not txt then return end
     txt = txt:lower()
@@ -51,13 +131,10 @@ end
 
 -- RAGEBOT SAVE / RESTORE
 local function saveRB()
-    local rb_targets = api:get_ui_object("ragebot_targets")
-    local rb_enabled = api:get_ui_object("ragebot_enabled")
-    local rb_flame = api:get_ui_object("ragebot_flame")
     return {
-        targets = rb_targets and rb_targets.Value or {},
-        enabled = rb_enabled and rb_enabled.Value or false,
-        flame = rb_flame and rb_flame.Value or false
+        targets = api:get_ui_object("ragebot_targets").Value or {},
+        enabled = api:get_ui_object("ragebot_enabled").Value or false,
+        flame = api:get_ui_object("ragebot_flame") and api:get_ui_object("ragebot_flame").Value or false
     }
 end
 
@@ -76,7 +153,6 @@ end
 -- =========================
 local commands = {}
 
--- ?a Auto ragebot
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
@@ -85,27 +161,22 @@ commands.a = function(_, ...)
             send("Autoing "..plr.DisplayName)
         end
     end
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue(targets) end
+    api:get_ui_object("ragebot_targets"):SetValue(targets)
     api:set_ragebot(true)
 end
 
--- ?reset
 commands.reset = function()
     targets = {}
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({}) end
+    api:get_ui_object("ragebot_targets"):SetValue({})
     api:set_ragebot(false)
     send("Ragebot cleared")
 end
 
--- ?fp fake position
 commands.fp = function(_,arg)
     api:set_fake(arg ~= "off")
     send("Fake position "..(arg ~= "off" and "enabled" or "disabled"))
 end
 
--- ?f follow owner
 commands.f = function(_,arg)
     if arg == "off" then
         if followConnection then followConnection:Disconnect() end
@@ -122,7 +193,6 @@ commands.f = function(_,arg)
     send("Following "..ownerPlr.DisplayName)
 end
 
--- ?tp
 commands.tp = function(_,name)
     local t = getplayer(name)
     if t and t.Character then
@@ -131,13 +201,11 @@ commands.tp = function(_,name)
     end
 end
 
--- ?b bring
 commands.b = function(_,name)
     local t = getplayer(name)
     if not t then return end
     local saved = saveRB()
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({[t.Name]=true}) end
+    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
     api:set_ragebot(true)
     send("Bringing "..t.DisplayName)
     task.spawn(function()
@@ -149,13 +217,11 @@ commands.b = function(_,name)
     end)
 end
 
--- ?kill
 commands.kill = function(_,name)
     local t = getplayer(name)
     if not t or not MainEvent then return end
     local saved = saveRB()
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({[t.Name]=true}) end
+    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
     api:set_ragebot(true)
     send("Killing "..t.DisplayName)
     task.spawn(function()
@@ -168,17 +234,16 @@ commands.kill = function(_,name)
     end)
 end
 
--- WHITELIST / UNWHITELIST
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
     if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
 end
+
 commands.unwhitelist = function(_, name)
     local plr = getplayer(name)
     if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
 end
 
--- SENTRY
 commands.sentry = function(_, arg)
     if not arg then send("Usage: ?sentry on | off") return end
     arg = arg:lower()
@@ -199,22 +264,32 @@ commands.sentry = function(_, arg)
         if protector_toggle then protector_toggle:SetValue(false) end
         if targets_obj then targets_obj:SetValue({}) end
         restoreRB(saveRB())
-    else send("Usage: ?sentry on | off") end
-end
-
--- ?v Void bot (Fixed for Unnamed Enhancements UI)
-commands.v = function(_, arg)
-    local void_toggle = api:get_ui_object("character_void_enabled")
-    if void_toggle then
-        local state = (arg ~= "off")
-        void_toggle:SetValue(state)
-        send("Void "..(state and "enabled" or "disabled"))
-    else
-        send("Error: Void UI toggle not found in this utility.")
     end
 end
 
--- ?flame <player>
+commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
+commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
+
+commands.fix = function()
+    send("Character reset!")
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Health = 0
+    else
+        LocalPlayer:LoadCharacter()
+    end
+end
+
+-- ?v COMMAND (UPDATED)
+commands.v = function(_, arg)
+    if framework.elements.voidToggle then
+        local newState = (arg ~= "off")
+        framework.elements.voidToggle:SetValue(newState)
+        send("Better Void: " .. (newState and "ON" or "OFF"))
+    else
+        send("Void API not found.")
+    end
+end
+
 commands.flame = function(_, targetName)
     if not targetName then send("Usage: ?flame <player>") return end
     local plr = getplayer(targetName)
@@ -233,24 +308,14 @@ commands.flame = function(_, targetName)
     end)
 end
 
--- ?fix resets character
-commands.fix = function()
-    send("Character reset!")
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.Health = 0
-    else LocalPlayer:LoadCharacter() end
-end
-
--- EMOTES
 for _,em in ipairs(config.Emotes) do
     commands[em] = function() api:emote(em); send("Emoting: "..em) end
 end
 
--- ?leave
 commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
 
 -- =========================
--- GUI: Commands Tab
+-- GUI: TABS & GROUPS
 -- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
@@ -263,14 +328,28 @@ cmdBox:AddLabel("?f / ?f off → Follow owner")
 cmdBox:AddLabel("?tp → Teleport")
 cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
 cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
+cmdBox:AddLabel("?ka → Enable KillAura")
+cmdBox:AddLabel("?karange <number> → Set KillAura range")
 cmdBox:AddLabel("?fix → Reset character")
 cmdBox:AddLabel("?v / ?v off → Void bot")
 cmdBox:AddLabel("?flame <player> → Flame target")
 cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
+-- VOID TAB UI
+local deepVoidTab = api:AddTab("void")
+local mainGroup = deepVoidTab:AddLeftGroupbox("better void")
+framework.elements.voidToggle = mainGroup:AddToggle("true_void_enabled", {
+    Text = "better void",
+    Default = false,
+    Callback = function(v) if v then startDeepVoid() else stopDeepVoid() end end
+})
+framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
+    Text = "switch speed", Default = 0.05, Min = 0.01, Max = 0.2, Rounding = 2
+})
+
 -- =========================
--- REGISTER COMMANDS
+-- REGISTRATION
 -- =========================
 for n, f in pairs(commands) do
     pcall(function()
@@ -280,7 +359,6 @@ for n, f in pairs(commands) do
     end)
 end
 
--- FIXED: Safety check for 'utility' to prevent indexing nil error
 pcall(function()
     local utility = getgenv().utility or _G.utility
     if utility and utility.on_event then
