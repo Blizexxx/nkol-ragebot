@@ -2,6 +2,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 local api = getfenv().api or getgenv().api or {}
@@ -310,6 +311,16 @@ commands.fix = function()
     end
 end
 
+-- REJOIN COMMAND
+commands.rejoin = function()
+    send("Rejoining...")
+    if #Players:GetPlayers() <= 1 then
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    else
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
+end
+
 -- ?v COMMAND (UPDATED)
 commands.v = function(_, arg)
     if framework.elements.voidToggle then
@@ -383,6 +394,7 @@ cmdBox:AddLabel("?karange <number> → Set KillAura range")
 cmdBox:AddLabel("?fix → Reset character")
 cmdBox:AddLabel("?v / ?v off → Void bot")
 cmdBox:AddLabel("?flame <player> → Flame target")
+cmdBox:AddLabel("?rejoin → Rejoin server")
 cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
