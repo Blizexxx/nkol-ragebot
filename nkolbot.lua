@@ -5,6 +5,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
+-- Safety: Define utility if not globally present
+local utility = utility or _G.utility
+
 -- CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
@@ -200,21 +203,33 @@ commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 
 
 -- ?fix resets character
 commands.fix = function()
-    send("Character reset!")
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+    if api and api.reset_character then
+        api:reset_character()
+    elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.Health = 0
     else
         LocalPlayer:LoadCharacter()
     end
+    send("Character reset!")
 end
 
--- ?v void bot
+-- ?v void bot - FIXED to enable/disable the UI toggle
 commands.v = function()
-    if api and api.toggle_void then
-        api.toggle_void()
-        send("Better Void toggled!")
+    -- Attempts to find the "enabled" checkbox for the Void module
+    local voidToggle = api:get_ui_object("void_enabled") or api:get_ui_object("void_active")
+    
+    if voidToggle then
+        local newState = not voidToggle.Value
+        voidToggle:SetValue(newState)
+        send("Void toggle: " .. (newState and "ENABLED" or "DISABLED"))
     else
-        send("Void API not found.")
+        -- Fallback if the UI object name is different
+        if api and api.toggle_void then
+            api.toggle_void()
+            send("Void toggled via API.")
+        else
+            send("Void UI object not found.")
+        end
     end
 end
 
@@ -274,36 +289,34 @@ cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
 cmdBox:AddLabel("?ka → Enable KillAura")
 cmdBox:AddLabel("?karange <number> → Set KillAura range")
 cmdBox:AddLabel("?fix → Reset character")
-cmdBox:AddLabel("?v → Void bot")
+cmdBox:AddLabel("?v → Toggle Void")
 cmdBox:AddLabel("?flame <player> → Flame target")
 cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER (Fixed for Nil Error)
+-- REGISTER (Fixed for Nil Error and Utility Event)
 -- =========================
-
--- We use a simple loop. If the 'api' has on_command, we use that.
--- If not, we just use the original method.
-for n, f in pairs(commands) do
-    pcall(function()
-        api:on_command(prefix..n, function(p, ...) 
-            if p.Name == owner then 
-                f(p, ...) 
-            end 
-        end)
-    end)
-end
-
--- If you want to use the utility 'on_event' specifically, it's safer to do this:
-pcall(function()
+local function registerCommands()
     if utility and utility.on_event then
         utility.on_event("on_message", function(player, message)
-            if player == owner and message:sub(1, #prefix) == prefix then
+            -- Support both name string or player object
+            local sender = type(player) == "string" and Players:FindFirstChild(player) or player
+            if sender and sender.Name == owner and message:sub(1, #prefix) == prefix then
                 local args = string.split(message:sub(#prefix + 1), " ")
                 local cmd = table.remove(args, 1):lower()
-                if commands[cmd] then commands[cmd](LocalPlayer, unpack(args)) end
+                if commands[cmd] then commands[cmd](sender, unpack(args)) end
             end
         end)
+    else
+        -- Fallback loop if utility is not available
+        for n,f in pairs(commands) do
+            pcall(function()
+                api:on_command(prefix..n, function(p,...) if p.Name==owner then f(p,...) end end)
+            end)
+        end
     end
-end)
+end
+
+-- Final check to prevent nil indexing
+pcall(registerCommands)
