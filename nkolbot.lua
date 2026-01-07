@@ -14,13 +14,13 @@ local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
     Prefix = "?",
     SelectedWeapons = "LMG/Rifle",
-    Emotes = {"floss", "samba", "twerk", "twirl"}
+    Emotes = {"floss","samba","twerk","twirl"}
 }
 
 local owner = config.Owner
 local prefix = config.Prefix
 
--- Variables
+-- Follow / ragebot / sentry variables
 local followConnection
 local targets = {}
 local whitelist = {}
@@ -29,8 +29,11 @@ local sentry_active = false
 -- CHAT SYSTEM
 local function send(msg)
     pcall(function()
-        if api and api.chat then api:chat(msg)
-        elseif api and api.Chat then api:Chat(msg) end
+        if api and api.chat then
+            api:chat(msg)
+        elseif api and api.Chat then
+            api:Chat(msg)
+        end
     end)
 end
 
@@ -38,6 +41,7 @@ local function getFormattedName(player)
     return string.format("%s (@%s)", player.DisplayName, player.Name)
 end
 
+-- PLAYER FINDER
 local function getplayer(txt)
     if not txt then return end
     txt = txt:lower()
@@ -50,13 +54,10 @@ end
 
 -- RAGEBOT SAVE / RESTORE
 local function saveRB()
-    local rb_targets = api:get_ui_object("ragebot_targets")
-    local rb_enabled = api:get_ui_object("ragebot_enabled")
-    local rb_flame = api:get_ui_object("ragebot_flame")
     return {
-        targets = rb_targets and rb_targets.Value or {},
-        enabled = rb_enabled and rb_enabled.Value or false,
-        flame = rb_flame and rb_flame.Value or false
+        targets = api:get_ui_object("ragebot_targets").Value or {},
+        enabled = api:get_ui_object("ragebot_enabled").Value or false,
+        flame = api:get_ui_object("ragebot_flame") and api:get_ui_object("ragebot_flame").Value or false
     }
 end
 
@@ -71,33 +72,38 @@ local function restoreRB(s)
 end
 
 -- =========================
--- ALL COMMANDS (RESTORED)
+-- COMMANDS (FULL RESTORE)
 -- =========================
 local commands = {}
 
+-- ?a Auto ragebot
 commands.a = function(_, ...)
     for _,n in pairs({...}) do
         local plr = getplayer(n)
-        if plr then targets[plr.Name] = true; send("Autoing "..plr.DisplayName) end
+        if plr then
+            targets[plr.Name] = true
+            send("Autoing "..plr.DisplayName)
+        end
     end
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue(targets) end
+    api:get_ui_object("ragebot_targets"):SetValue(targets)
     api:set_ragebot(true)
 end
 
+-- ?reset
 commands.reset = function()
     targets = {}
-    local obj = api:get_ui_object("ragebot_targets")
-    if obj then obj:SetValue({}) end
+    api:get_ui_object("ragebot_targets"):SetValue({})
     api:set_ragebot(false)
     send("Ragebot cleared")
 end
 
+-- ?fp fake position
 commands.fp = function(_,arg)
     api:set_fake(arg ~= "off")
     send("Fake position "..(arg ~= "off" and "enabled" or "disabled"))
 end
 
+-- ?f follow owner
 commands.f = function(_,arg)
     if arg == "off" then
         if followConnection then followConnection:Disconnect() end
@@ -114,6 +120,7 @@ commands.f = function(_,arg)
     send("Following "..ownerPlr.DisplayName)
 end
 
+-- ?tp
 commands.tp = function(_,name)
     local t = getplayer(name)
     if t and t.Character then
@@ -122,6 +129,7 @@ commands.tp = function(_,name)
     end
 end
 
+-- ?b bring
 commands.b = function(_,name)
     local t = getplayer(name)
     if not t then return end
@@ -138,6 +146,7 @@ commands.b = function(_,name)
     end)
 end
 
+-- ?kill
 commands.kill = function(_,name)
     local t = getplayer(name)
     if not t or not MainEvent then return end
@@ -155,16 +164,17 @@ commands.kill = function(_,name)
     end)
 end
 
+-- WHITELIST / UNWHITELIST
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
     if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
 end
-
 commands.unwhitelist = function(_, name)
     local plr = getplayer(name)
     if plr and whitelist[plr.Name] then whitelist[plr.Name]=nil; send(plr.DisplayName.." removed from whitelist") end
 end
 
+-- SENTRY
 commands.sentry = function(_, arg)
     if not arg then send("Usage: ?sentry on | off") return end
     arg = arg:lower()
@@ -173,87 +183,125 @@ commands.sentry = function(_, arg)
     local targets_obj = api:get_ui_object("protector_targets")
     local protector_toggle = api:get_ui_object("protector_active")
     if arg == "on" then
+        if sentry_active then send("Sentry already active") return end
         sentry_active=true; send("Sentry enabled: Protecting "..ownerPlr.DisplayName)
         if protector_toggle then protector_toggle:SetValue(true) end
         local sentry_targets = {}; sentry_targets[getFormattedName(ownerPlr)]=true
         for name,_ in pairs(whitelist) do local p=Players:FindFirstChild(name); if p then sentry_targets[getFormattedName(p)]=true end end
         if targets_obj then targets_obj:SetValue(sentry_targets) end
     elseif arg == "off" then
+        if not sentry_active then send("Sentry already inactive") return end
         sentry_active=false; send("Sentry disabled")
         if protector_toggle then protector_toggle:SetValue(false) end
         if targets_obj then targets_obj:SetValue({}) end
         restoreRB(saveRB())
-    end
+    else send("Usage: ?sentry on | off") end
 end
 
+-- ?ka / ?karange
 commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
 commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
 
+-- ?fix resets character
+commands.fix = function()
+    send("Character reset!")
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Health = 0
+    else
+        LocalPlayer:LoadCharacter()
+    end
+end
+
+-- ?v void bot (With ?v off support)
 commands.v = function(_, arg)
     local void_toggle = api:get_ui_object("character_void_enabled")
     if void_toggle then
         local state = (arg ~= "off")
         void_toggle:SetValue(state)
         send("Void bot "..(state and "enabled" or "disabled"))
-    else send("Void toggle not found.") end
-end
-
-commands.flame = function(_, targetName)
-    if not targetName then send("Usage: ?flame <player>") return end
-    local plr = getplayer(targetName)
-    if not plr then send("Player not found") return end
-    local saved = saveRB()
-    api:get_ui_object("ragebot_targets"):SetValue({[plr.Name] = true})
-    api:get_ui_object("ragebot_flame"):SetValue(true)
-    api:set_ragebot(true)
-    send("Flame activated on "..plr.DisplayName)
-    task.spawn(function()
-        while plr.Parent and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") do task.wait(0.5) end
-        restoreRB(saved)
-        send("Flame finished")
-    end)
-end
-
-commands.fix = function()
-    send("Character reset!")
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.Health = 0
-    else LocalPlayer:LoadCharacter() end
-end
-
--- EMOTES
-for _, em in ipairs(config.Emotes) do
-    commands[em] = function()
-        send("Emoting: " .. em)
-        pcall(function()
-            if api and api.emote then api:emote(em)
-            else MainEvent:FireServer("PlayEmote", em) end
-        end)
+    else
+        send("Void API not found.")
     end
 end
 
-commands.leave = function() send("Leaving..."); LocalPlayer:Kick("Left") end
+-- ?flame <player>
+commands.flame = function(_, targetName)
+    if not targetName then 
+        send("Usage: ?flame <player>")
+        return
+    end
+    local plr = getplayer(targetName)
+    if not plr then
+        send("Player not found: "..targetName)
+        return
+    end
+
+    local saved = saveRB()
+    local rb_targets = api:get_ui_object("ragebot_targets")
+    if rb_targets then rb_targets:SetValue({[plr.Name] = true}) end
+
+    local rb_flame = api:get_ui_object("ragebot_flame")
+    if rb_flame then rb_flame:SetValue(true) end
+
+    api:set_ragebot(true)
+    send("Flame activated on "..plr.DisplayName)
+
+    task.spawn(function()
+        while plr.Parent and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") do
+            task.wait(0.5)
+        end
+        restoreRB(saved)
+        send("Flame finished for "..plr.DisplayName)
+    end)
+end
+
+-- EMOTES (Fixed logic)
+for _,em in ipairs(config.Emotes) do
+    commands[em] = function() 
+        if api and api.emote then
+            api:emote(em)
+        else
+            MainEvent:FireServer("PlayEmote", em)
+        end
+        send("Emoting: "..em) 
+    end
+end
+
+-- ?leave
+commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
 
 -- =========================
--- GUI & REGISTRATION
+-- GUI: Commands Tab
 -- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
 local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
 
-local label_list = {"a", "kill", "b", "reset", "fp", "f", "tp", "whitelist", "unwhitelist", "sentry", "ka", "karange", "fix", "v (Void)", "flame", "leave"}
-for _, l in ipairs(label_list) do cmdBox:AddLabel("?" .. l) end
-for _, em in ipairs(config.Emotes) do cmdBox:AddLabel("?" .. em .. " -> Emote " .. em) end
+-- Adding every label back to the UI
+local labels = {"a","kill","b","reset","fp","f","tp","whitelist","unwhitelist","sentry","ka","karange","fix","v","flame","leave"}
+for _, l in ipairs(labels) do
+    cmdBox:AddLabel("?"..l)
+end
+for _,em in ipairs(config.Emotes) do 
+    cmdBox:AddLabel("?"..em.." → Emote "..em) 
+end
 
+-- =========================
+-- REGISTRATION
+-- =========================
 for n, f in pairs(commands) do
     pcall(function()
-        api:on_command(prefix..n, function(p, ...) if p.Name == owner then f(p, ...) end end)
+        api:on_command(prefix..n, function(p, ...) 
+            if p.Name == owner then 
+                f(p, ...) 
+            end 
+        end)
     end)
 end
 
 pcall(function()
-    local util = getgenv().utility or _G.utility
-    if util and util.on_event then
-        util.on_event("on_message", function(player, message)
+    local utility = getgenv().utility or _G.utility
+    if utility and utility.on_event then
+        utility.on_event("on_message", function(player, message)
             if player.Name == owner and message:sub(1, #prefix) == prefix then
                 local args = string.split(message:sub(#prefix + 1), " ")
                 local cmd = table.remove(args, 1):lower()
