@@ -1,4 +1,4 @@
--- Original owner: Blizexxx / Command-based NKOL Ragebot
+-- Original owner: Blizexxx / integrated chat system
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,10 +12,11 @@ local config = getgenv().NKOL_RAGEBOT or {
     SelectedWeapons = "LMG/Rifle",
     Emotes = {"floss","samba","twerk","twirl"}
 }
+
 local owner = config.Owner
 local prefix = config.Prefix
 
--- Follow / Ragebot / Sentry
+-- Follow / ragebot / sentry
 local followConnection
 local targets = {}
 local whitelist = {}
@@ -61,7 +62,9 @@ local function restoreRB(s)
     api:set_ragebot(s.enabled)
 end
 
+-- =========================
 -- COMMANDS
+-- =========================
 local commands = {}
 
 -- ?a Auto ragebot
@@ -190,45 +193,56 @@ end
 commands.ka = function() api:set_killaura(true); send("KillAura enabled") end
 commands.karange = function(_, range) api:set_killaura_range(tonumber(range) or 10); send("KillAura range set to "..(range or 10)) end
 
+-- ?fix resets character
+commands.fix = function()
+    if api and api.reset_character then
+        api:reset_character()
+    else
+        LocalPlayer:LoadCharacter()
+    end
+    send("Character reset!")
+end
+
+-- ?v void bot
+commands.v = function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        api:teleport(CFrame.new(0,-500,0))
+        send("Bot voided!")
+    end
+end
+
 -- EMOTES
 for _,em in ipairs(config.Emotes) do
     commands[em] = function() api:emote(em); send("Emoting: "..em) end
 end
 
--- ?fix resets character
-commands.fix = function()
-    if LocalPlayer.Character then
-        LocalPlayer.Character:BreakJoints()
-        send("Character reset")
-    end
-end
-
--- ?v / ?vstop Better Void commands
-commands.v = function()
-    if api.start_void then
-        api:start_void()
-        send("Better Void activated")
-    else
-        send("Better Void not available")
-    end
-end
-
-commands.vstop = function()
-    if api.stop_void then
-        api:stop_void()
-        send("Better Void deactivated")
-    else
-        send("Better Void not available")
-    end
-end
-
 -- ?leave
-commands.leave = function()
-    send("Leaving game...")
-    LocalPlayer:Kick("Left the game")
-end
+commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
 
+-- =========================
+-- GUI: Commands Tab
+-- =========================
+local commandsTab = api:GetTab("commands") or api:AddTab("commands")
+local cmdBox = commandsTab:AddLeftGroupbox("Chat Commands")
+cmdBox:AddLabel("?a → Auto ragebot")
+cmdBox:AddLabel("?kill → Kill target")
+cmdBox:AddLabel("?b → Bring target")
+cmdBox:AddLabel("?reset → Clear ragebot")
+cmdBox:AddLabel("?fp / ?fp off → Fake position")
+cmdBox:AddLabel("?f / ?f off → Follow owner")
+cmdBox:AddLabel("?tp → Teleport")
+cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
+cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
+cmdBox:AddLabel("?ka → Enable KillAura")
+cmdBox:AddLabel("?karange <number> → Set KillAura range")
+cmdBox:AddLabel("?fix → Reset character")
+cmdBox:AddLabel("?v → Void bot")
+cmdBox:AddLabel("?leave → Leave game")
+for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
+
+-- =========================
 -- REGISTER
+-- =========================
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
