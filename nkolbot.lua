@@ -1,10 +1,20 @@
--- Original owner: Blizexxx / Integrated with Utility API
+-- Original owner: Blizexxx / Integrated Chat & Utility System
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+local MainEvent = ReplicatedStorage:FindFirstChild("MainEvent")
 
--- CONFIG
+-- 1. WAIT FOR UTILITY TO LOAD (Prevents the 'index nil' error)
+local utility = utility or _G.utility
+local count = 0
+while not utility and count < 50 do
+    task.wait(0.1)
+    utility = utility or _G.utility
+    count = count + 1
+end
+
+-- 2. CONFIG
 local config = getgenv().NKOL_RAGEBOT or {
     Owner = LocalPlayer.Name,
     Prefix = "?",
@@ -14,19 +24,17 @@ local config = getgenv().NKOL_RAGEBOT or {
 
 local owner = config.Owner
 local prefix = config.Prefix
+local targets = {}
+local whitelist = {}
 
--- CHAT SYSTEM (Internal)
+-- 3. HELPER FUNCTIONS
 local function send(msg)
     pcall(function()
-        if api and api.chat then
-            api:chat(msg)
-        elseif api and api.Chat then
-            api:Chat(msg)
-        end
+        if api and api.chat then api:chat(msg)
+        elseif api and api.Chat then api:Chat(msg) end
     end)
 end
 
--- PLAYER FINDER
 local function getplayer(txt)
     if not txt then return end
     txt = txt:lower()
@@ -37,60 +45,64 @@ local function getplayer(txt)
     end
 end
 
--- =========================
--- COMMANDS
--- =========================
+-- 4. COMMAND DEFINITIONS
 local commands = {}
 
--- The ?fix command
+-- The ?fix command you requested
 commands.fix = function()
     send("Resetting character...")
+    -- Priority 1: API Reset if available
     if api and api.reset_character then
         api:reset_character()
+    -- Priority 2: Standard Roblox Reset
     elseif LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.Health = 0
+    -- Priority 3: Forced Respawn
     else
         LocalPlayer:LoadCharacter()
     end
 end
 
--- Add other commands to the table
+commands.a = function(_, ...)
+    for _,n in pairs({...}) do
+        local plr = getplayer(n)
+        if plr then
+            targets[plr.Name] = true
+            send("Autoing "..plr.DisplayName)
+        end
+    end
+    if api then api:get_ui_object("ragebot_targets"):SetValue(targets) end
+end
+
 commands.reset = function()
+    targets = {}
     if api then
         api:get_ui_object("ragebot_targets"):SetValue({})
         api:set_ragebot(false)
-        send("Ragebot cleared")
     end
+    send("Ragebot cleared")
 end
 
--- =========================
--- UTILITY EVENT LISTENER
--- =========================
-
--- We use pcall here so if 'utility' isn't ready yet, the script doesn't break
-local status, err = pcall(function()
+-- 5. MAIN EXECUTION & EVENT LISTENING
+if utility then
+    -- Use the on_event system from your documentation
     utility.on_event("on_message", function(player_name, message)
-        -- In some APIs, player_name is a string, in others it's an object
-        local senderName = type(player_name) == "string" and player_name or player_name.Name
-        
-        if senderName == owner then
-            if message:sub(1, #prefix) == prefix then
-                local full_content = message:sub(#prefix + 1)
-                local args = string.split(full_content, " ")
-                local command_name = table.remove(args, 1):lower()
+        -- Ensure sender is the owner and message starts with prefix
+        if player_name == owner and message:sub(1, #prefix) == prefix then
+            local full_cmd = message:sub(#prefix + 1)
+            local args = string.split(full_cmd, " ")
+            local cmd_name = table.remove(args, 1):lower()
 
-                local func = commands[command_name]
-                if func then
-                    func(Players:FindFirstChild(senderName), unpack(args))
-                end
+            local func = commands[cmd_name]
+            if func then
+                func(LocalPlayer, unpack(args))
             end
         end
     end)
-end)
 
-if not status then
-    warn("Utility API Error: " .. tostring(err))
-    -- Fallback: If utility.on_event fails, try the standard way
+    utility.notify("NKOL Loader: Success")
+else
+    -- Final Fallback if utility never loads
     LocalPlayer.Chatted:Connect(function(msg)
         if msg:sub(1, #prefix) == prefix then
             local args = string.split(msg:sub(#prefix+1), " ")
@@ -99,5 +111,3 @@ if not status then
         end
     end)
 end
-
-utility.notify("Script Active. Prefix: " .. prefix)
