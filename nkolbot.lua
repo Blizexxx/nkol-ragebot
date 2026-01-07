@@ -234,6 +234,23 @@ commands.kill = function(_,name)
     end)
 end
 
+-- UPDATED PROTECT LOGIC
+commands.protect = function(_, name)
+    local plr = getplayer(name)
+    if plr then 
+        whitelist[plr.Name] = true
+        send("Now protecting " .. plr.DisplayName)
+    end
+end
+
+commands.unprotect = function(_, name)
+    local plr = getplayer(name)
+    if plr then 
+        whitelist[plr.Name] = nil
+        send("No longer protecting " .. plr.DisplayName)
+    end
+end
+
 commands.whitelist = function(_, name)
     local plr = getplayer(name)
     if plr then whitelist[plr.Name]=true; send(plr.DisplayName.." added to whitelist") end
@@ -315,6 +332,23 @@ end
 commands.leave = function() send("Leaving game..."); LocalPlayer:Kick("Left the game") end
 
 -- =========================
+-- COUNTER-ATTACK LISTENER
+-- =========================
+api:on_event("player_got_shot", function(victim_name, attacker_name)
+    -- If the victim is you OR someone in your whitelist
+    if victim_name == LocalPlayer.Name or whitelist[victim_name] then
+        local attacker = Players:FindFirstChild(attacker_name)
+        if attacker and attacker ~= LocalPlayer and not whitelist[attacker_name] then
+            -- Add attacker to active targets
+            targets[attacker_name] = true
+            api:get_ui_object("ragebot_targets"):SetValue(targets)
+            api:set_ragebot(true)
+            send("Countering " .. attacker.DisplayName .. " for shooting a protected user!")
+        end
+    end
+end)
+
+-- =========================
 -- GUI: TABS & GROUPS
 -- =========================
 local commandsTab = api:GetTab("commands") or api:AddTab("commands")
@@ -327,6 +361,7 @@ cmdBox:AddLabel("?fp / ?fp off → Fake position")
 cmdBox:AddLabel("?f / ?f off → Follow owner")
 cmdBox:AddLabel("?tp → Teleport")
 cmdBox:AddLabel("?whitelist / ?unwhitelist → Sentry whitelist")
+cmdBox:AddLabel("?protect / ?unprotect → Counter-Attack Mode")
 cmdBox:AddLabel("?sentry on / off → Protect owner + whitelist")
 cmdBox:AddLabel("?ka → Enable KillAura")
 cmdBox:AddLabel("?karange <number> → Set KillAura range")
