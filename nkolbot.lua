@@ -21,7 +21,6 @@ local followConnection
 local targets = {}
 local whitelist = {}
 local sentry_active = false
-local flame_targets = {}
 
 -- CHAT SYSTEM
 local function send(msg)
@@ -53,14 +52,19 @@ end
 local function saveRB()
     return {
         targets = api:get_ui_object("ragebot_targets").Value or {},
-        enabled = api:get_ui_object("ragebot_enabled").Value or false
+        enabled = api:get_ui_object("ragebot_enabled").Value or false,
+        flame = api:get_ui_object("ragebot_flame") and api:get_ui_object("ragebot_flame").Value or false
     }
 end
 
 local function restoreRB(s)
     if not s then return end
-    api:get_ui_object("ragebot_targets"):SetValue(s.targets)
-    api:set_ragebot(s.enabled)
+    local rb_targets = api:get_ui_object("ragebot_targets")
+    local rb_enabled = api:get_ui_object("ragebot_enabled")
+    local rb_flame = api:get_ui_object("ragebot_flame")
+    if rb_targets then rb_targets:SetValue(s.targets) end
+    if rb_enabled then api:set_ragebot(s.enabled) end
+    if rb_flame then rb_flame:SetValue(s.flame) end
 end
 
 -- =========================
@@ -206,35 +210,48 @@ end
 
 -- ?v void bot
 commands.v = function()
-    if api.toggle_void then
+    if api and api.toggle_void then
         api.toggle_void()
-        send("Void activated!")
+        send("Better Void toggled!")
     else
-        send("Void API not found")
+        send("Void API not found.")
     end
 end
 
 -- ?flame <player>
 commands.flame = function(_, targetName)
     if not targetName then 
-        api:notify("[VEXIS] Usage: ?flame <player>", 3)
+        send("Usage: ?flame <player>")
         return
     end
     local plr = getplayer(targetName)
-    if not plr then 
-        api:notify("[VEXIS] Player not found: "..targetName, 3)
+    if not plr then
+        send("Player not found: "..targetName)
         return
     end
-    flame_targets[plr.Name] = true
-    api:notify("[VEXIS] Flame enabled for "..plr.DisplayName, 4)
+
+    local saved = saveRB()
+    local rb_targets = api:get_ui_object("ragebot_targets")
+    if rb_targets then rb_targets:SetValue({[plr.Name] = true}) end
+
+    local rb_flame = api:get_ui_object("ragebot_flame")
+    if rb_flame then rb_flame:SetValue(true) end
+
+    api:set_ragebot(true)
+    send("Flame activated on "..plr.DisplayName)
+
+    task.spawn(function()
+        while plr.Parent and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") do
+            task.wait(0.5)
+        end
+        restoreRB(saved)
+        send("Flame finished for "..plr.DisplayName)
+    end)
 end
 
 -- EMOTES
 for _,em in ipairs(config.Emotes) do
-    commands[em] = function() 
-        if api and api.emote then api:emote(em) end
-        send("Emoting: "..em) 
-    end
+    commands[em] = function() api:emote(em); send("Emoting: "..em) end
 end
 
 -- ?leave
@@ -263,33 +280,8 @@ cmdBox:AddLabel("?leave → Leave game")
 for _,em in ipairs(config.Emotes) do cmdBox:AddLabel("?"..em.." → Emote "..em) end
 
 -- =========================
--- REGISTER COMMANDS
+-- REGISTER
 -- =========================
 for n,f in pairs(commands) do
     api:on_command(prefix..n,function(p,...) if p.Name==owner then f(p,...) end end)
 end
-
--- =========================
--- FLAME AUTO ENABLE IN RAGEBOT
--- =========================
-local old_refreshRagebot = refreshRagebot or function() end
-refreshRagebot = function(stop_reason)
-    pcall(function()
-        old_refreshRagebot(stop_reason)
-        local rb_targets = api:get_ui_object("ragebot_targets")
-        local rb_flame = api:get_ui_object("ragebot_flame")
-        if rb_targets and rb_flame then
-            local flame_active = false
-            for name,_ in pairs(flame_targets) do
-                local p = Players:FindFirstChild(name)
-                if p and rb_targets.Value and rb_targets.Value[p.Name] then
-                    flame_active = true
-                    break
-                end
-            end
-            rb_flame:SetValue(flame_active)
-        end
-    end)
-end
-api:on_event("player_killed", function(pName) flame_targets[pName] = nil end)
-api:on_event("player_left", function(pName) flame_targets[pName] = nil end)
