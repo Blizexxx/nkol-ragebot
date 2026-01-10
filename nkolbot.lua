@@ -215,21 +215,158 @@ commands.tp = function(_,name)
     end
 end
 
-commands.b = function(_,name)
+local RunService = game:GetService("RunService")
+local lp = game.Players.LocalPlayer
+
+function ensureAUG()
+    local function hasAUG()
+        for _,v in ipairs(lp.Backpack:GetChildren()) do
+            if v:IsA("Tool") and v.Name == "[AUG]" then
+                return v
+            end
+        end
+        for _,v in ipairs(lp.Character:GetChildren()) do
+            if v:IsA("Tool") and v.Name == "[AUG]" then
+                return v
+            end
+        end
+    end
+
+    if hasAUG() then return end
+
+    api:buy_item("[AUG]")
+    for i = 1, 3 do
+        repeat task.wait() until api:can_desync()
+        api:buy_item("[AUG]", true)
+    end
+
+    repeat task.wait() until hasAUG()
+end
+
+function equipAUG()
+    local aug
+    repeat
+        aug = lp.Backpack:FindFirstChild("[AUG]") or lp.Character:FindFirstChild("[AUG]")
+        if aug and aug.Parent == lp.Backpack then
+            aug.Parent = lp.Character
+        end
+        task.wait()
+    until aug and aug.Parent == lp.Character
+
+    return aug
+end
+
+function killTarget(target)
+    local char = target.Character
+    if not char then return end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local head = char:FindFirstChild("Head")
+    if not hrp or not head then return end
+
+    ensureAUG()
+    local tool = equipAUG()
+    local cache = api:get_tool_cache()
+
+    local baseCF = hrp.CFrame
+    local points = {
+        baseCF * CFrame.new( 2, 0,  2),
+        baseCF * CFrame.new(-2, 0,  2),
+        baseCF * CFrame.new( 0, 0, -2),
+    }
+
+    local idx = 1
+
+    local conn
+    conn = api:add_connection(RunService.Heartbeat:Connect(function()
+        if not target.Character or not target.Character:FindFirstChild("Humanoid") then
+            conn:Disconnect()
+            return
+        end
+
+        if tool.Parent ~= lp.Character then
+            tool.Parent = lp.Character
+        end
+
+        api:set_desync_cframe(points[idx])
+        idx = idx % #points + 1
+
+        if cache.gun and cache.ammo > 0 then
+            api:force_shoot(
+                cache.handle,
+                head,
+                api:get_desync_cframe(),
+                head.Position,
+                true
+            )
+        end
+    end))
+end
+
+function bringKO(target)
+    local conn
+    conn = api:add_connection(RunService.Heartbeat:Connect(function()
+        if not target
+        or not target.Character then
+            conn:Disconnect()
+            return
+        end
+
+        local status = api:get_status_cache(target)
+
+        if not status["K.O"] then
+            conn:Disconnect()
+            return
+        end
+
+        if status["Grabbed"] then
+            conn:Disconnect()
+            return
+        end
+
+        local lt = target.Character:FindFirstChild("LowerTorso")
+        if not lt then return end
+
+        api:set_desync_cframe(
+            CFrame.new(lt.Position + Vector3.new(0, 3, 0))
+        )
+
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game)
+    end))
+end
+
+commands.b = function(_, name)
     local t = getplayer(name)
     if not t then return end
+
     local saved = saveRB()
-    api:get_ui_object("ragebot_targets"):SetValue({[t.Name]=true})
-    api:set_ragebot(true)
+    api:set_ragebot(false)
     send("Bringing "..t.DisplayName)
+
+    killTarget(t)
+
     task.spawn(function()
-        repeat task.wait(.15) until api:get_status_cache(t)["K.O"]
-        api:set_ragebot(false)
-        api:teleport(t.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-2))
+        local status = api:get_status_cache(t)
+        if status["SDeath"] or status["Dead"] then
+            send("Cant bring that player: " .. t.DisplayName)
+            return
+        end
+
+        repeat task.wait() until api:get_status_cache(t)["K.O"]
+
+        bringKO(t)
+
+        repeat task.wait() until api:get_status_cache(t)["Grabbed"]
+
         restoreRB(saved)
         send("Finished bringing "..t.DisplayName)
     end)
 end
+
+
+
+
 
 commands.kill = function(_,name)
     local t = getplayer(name)
@@ -398,10 +535,6 @@ framework.elements.speedSlider = mainGroup:AddSlider("void_switch_speed", {
     Text = "switch speed", Default = 0.05, Min = 0.01, Max = 0.2, Rounding = 2
 })
 
--- =========================
--- REGISTRATION & DETECTION
--- =========================
-
 -- Standard command registration for API
 for n, f in pairs(commands) do
     pcall(function()
@@ -453,4 +586,3 @@ pcall(function()
         end)
     end
 end)
-
